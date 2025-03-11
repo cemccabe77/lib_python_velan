@@ -8,7 +8,7 @@ from . import surfaces as srf
 from . import meshes as msh
 from . import skincluster as skn
 from . import shapes as shp
-from lib_python.mayaRigComponents.scripts import rdCtl as rdCtl
+from lib_python_velan.mayaRigComponents.scripts import rdCtl as rdCtl
 
 
 

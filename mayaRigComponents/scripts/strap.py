@@ -1,10 +1,10 @@
 import maya.cmds as cmds
 from . import rdCtl as rdCtl
-from lib_python.mayaRigUtils.scripts import omUtil as omu
-from lib_python.mayaRigUtils.scripts import rigUtils as rigu
-from lib_python.mayaRigUtils.scripts import curves as crv
-from lib_python.mayaRigUtils.scripts import skincluster as skn
-from lib_python.mayaRigUtils.scripts import surfaces as srf
+from lib_python_velan.mayaRigUtils.scripts import omUtil as omu
+from lib_python_velan.mayaRigUtils.scripts import rigUtils as rigu
+from lib_python_velan.mayaRigUtils.scripts import curves as crv
+from lib_python_velan.mayaRigUtils.scripts import skincluster as skn
+from lib_python_velan.mayaRigUtils.scripts import surfaces as srf
 from collections import OrderedDict
 
 

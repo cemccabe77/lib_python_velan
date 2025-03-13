@@ -199,34 +199,48 @@ def transferWeights(objLst=[], remove=False):
         tgtTyp = cmds.objectType(omu.getDagPath(tgt, shape=True))
 
         if tgtTyp == 'nurbsSurface':
-            if srcSkn and not tgtSkn:
-                jts = getSkinClusterInfluences(srcSkn)
-                cmds.select(jts, r=True) # cmds.skinCluster kept adding joint heirarchy. Using select instead.
-                cmds.select(tgt, add=True)
-                tgtSkn = cmds.skinCluster(tgt, jts, tsb=True)[0]
-                cmds.copySkinWeights(source, tgt.cv, noMirror=True, surfaceAssociation='closestPoint', ia=['oneToOne','name'])
             if srcSkn and tgtSkn:
-                cmds.copySkinWeights(source, tgt.cv, noMirror=True, surfaceAssociation='closestPoint', ia=['oneToOne','name'])
+                cmds.copySkinWeights(sourceSkin=srcSkn, destinationSkin=tgtSkn, noMirror=True, 
+                                         surfaceAssociation="closestPoint", 
+                                         influenceAssociation=["oneToOne", "name", "label", "closestJoint"])
+            else:
+                if srcSkn and not tgtSkn:
+                    jts = getSkinClusterInfluences(srcSkn)
+                    cmds.select(jts, r=True) # cmds.skinCluster kept adding joint heirarchy. Using select instead.
+                    cmds.select(tgt, add=True)
+                    tgtSkn = cmds.skinCluster(tgt, jts, tsb=True)[0]
+                    cmds.copySkinWeights(sourceSkin=srcSkn, destinationSkin=tgtSkn, noMirror=True, 
+                                         surfaceAssociation="closestPoint", 
+                                         influenceAssociation=["oneToOne", "name", "label", "closestJoint"])
+
 
         elif tgtTyp == 'mesh':
-            if srcSkn and not tgtSkn:
-                jts = getSkinClusterInfluences(srcSkn)
-                cmds.select(jts, r=True) # cmds.skinCluster kept adding joint heirarchy. Using select instead.
-                cmds.select(tgt, add=True)
-                tgtSkn = cmds.skinCluster(tgt, jts, tsb=True)[0]
-                cmds.copySkinWeights(ss=srcSkn, ds=tgtSkn, noMirror=True, sa='closestPoint', ia=['closestJoint', 'oneToOne'])
             if srcSkn and tgtSkn:
                 cmds.copySkinWeights(ss=srcSkn, ds=tgtSkn, noMirror=True, sa='closestPoint', ia=['closestJoint', 'oneToOne'])
+            else:
+                if srcSkn and not tgtSkn:
+                    jts = getSkinClusterInfluences(srcSkn)
+                    cmds.select(jts, r=True) # cmds.skinCluster kept adding joint heirarchy. Using select instead.
+                    cmds.select(tgt, add=True)
+                    tgtSkn = cmds.skinCluster(tgt, jts, tsb=True)[0]
+                    cmds.copySkinWeights(ss=srcSkn, ds=tgtSkn, noMirror=True, sa='closestPoint', ia=['closestJoint', 'oneToOne'])
+
 
         elif tgtTyp == 'nurbsCurve':
-            if srcSkn and not tgtSkn:
-                jts = getSkinClusterInfluences(srcSkn)
-                cmds.select(jts, r=True) # cmds.skinCluster kept adding joint heirarchy. Using select instead.
-                cmds.select(tgt, add=True)
-                tgtSkn = cmds.skinCluster(tgt, jts, tsb=True)[0]
-                cmds.copySkinWeights(source, tgt.cv, noMirror=True, surfaceAssociation='closestPoint', ia=['oneToOne','name'])
             if srcSkn and tgtSkn:
-                cmds.copySkinWeights(source, tgt.cv, noMirror=True, surfaceAssociation='closestPoint', ia=['oneToOne','name'])
+                cmds.copySkinWeights(sourceSkin=srcSkn, destinationSkin=tgtSkn, noMirror=True, 
+                                         surfaceAssociation="closestPoint", 
+                                         influenceAssociation=["oneToOne", "name", "label", "closestJoint"])
+            else:
+                if srcSkn and not tgtSkn:
+                    jts = getSkinClusterInfluences(srcSkn)
+                    cmds.select(jts, r=True) # cmds.skinCluster kept adding joint heirarchy. Using select instead.
+                    cmds.select(tgt, add=True)
+                    tgtSkn = cmds.skinCluster(tgt, jts, tsb=True)[0]
+                    cmds.copySkinWeights(sourceSkin=srcSkn, destinationSkin=tgtSkn, noMirror=True, 
+                                         surfaceAssociation="closestPoint", 
+                                         influenceAssociation=["oneToOne", "name", "label", "closestJoint"])
+
 
         if remove:
             removeUnusedInfluences(tgtSkn)

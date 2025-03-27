@@ -2,6 +2,7 @@ import maya.cmds as cmds
 from maya import OpenMaya as om
 from maya.api.OpenMaya import *
 from . import omUtil as omu
+from . import rigUtils as rigu
 
 
 def createEvenAlongCrv(objType, objName, count, crvName, chain=0, jntAxis='xyz', keepCrv=0, suffix='gde', radius=0.3, lra=True):
@@ -123,7 +124,7 @@ def consToCrv(consTo, crvName):
 
     return pocList
 
-def consToCrvParametric(consTo, crv, translate=True, rotate=True, upType=4, inverseUp=0, inverseFront=0, frontAxis=0, upAxis=2, upObj=None):
+def consToCrvParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, frontAxis=0, upAxis=2, upObj=None, offset=False, rotate=False):
     '''
     Constrain items to curve by motionPath nodes.
     Objects do not need to be placed on top of curve.
@@ -132,6 +133,8 @@ def consToCrvParametric(consTo, crv, translate=True, rotate=True, upType=4, inve
     ConsTo     = ([]) Items that will be constrained to curve
     crv        = (str) Curve to constrain items to
     upType     = (Int) 1=Object, 2=Object Rototation, 3=Vector, 4=Normal
+    rotate     = (bol) Constrain rotation
+    offset     = (bol) Create offset transform for constrained objects
     '''
 
     # Check crv exists and is a nurbsCurve
@@ -147,14 +150,27 @@ def consToCrvParametric(consTo, crv, translate=True, rotate=True, upType=4, inve
 
     pthNodes = []
     for obj in consTo:
+        if cmds.listRelatives(obj, p=True):
+            objParent = cmds.listRelatives(obj, p=True)[0]
+            cmds.parent(obj, w=True)
+        else:
+            objParent=None
+            
+        # Try to eliminate joint orientations that affect matrix constraint
+        if cmds.objectType(obj) == 'joint':
+            try:
+                cmds.makeIdentity(obj, apply=True, t=0, r=1, s=0, n=0, pn=1)
+                for a in ['X', 'Y', 'Z']:
+                    if cmds.getAttr(f'{obj}.jointOrient{a}') != 0:
+                        cmds.setAttr(f'{obj}.rotate{a}', cmds.getAttr(f'{obj}.jointOrient{a}'))
+                        cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+            except:
+                pass
+
         pos=cmds.xform(obj, q=True, ws=True, t=True)
         uParam = getUParam(pos, crv)
         motPth = cmds.createNode('motionPath', n=obj+'_motPath', ss=True)
         cmds.connectAttr(crv+'.worldSpace[0]', motPth+'.geometryPath')
-        if translate == True:
-            cmds.connectAttr(motPth+'.allCoordinates', obj+'.translate')
-        if rotate == True:
-            cmds.connectAttr(motPth+'.rotate', obj+'.rotate')
         cmds.setAttr(motPth+'.uValue', uParam)
 
         if upType in [1, 2]:
@@ -170,12 +186,38 @@ def consToCrvParametric(consTo, crv, translate=True, rotate=True, upType=4, inve
         cmds.setAttr(motPth+'.inverseFront', inverseFront)
         cmds.setAttr(motPth+'.frontAxis', frontAxis)
         cmds.setAttr(motPth+'.upAxis', upAxis)
-
         pthNodes.append(motPth)
+
+        if offset:
+            matrix = cmds.createNode('composeMatrix', n=motPth+'_worldMatrix', ss=True)
+            cmds.connectAttr(motPth+'.allCoordinates', matrix+'.inputTranslate')
+            cmds.connectAttr(motPth+'.rotate', matrix+'.inputRotate')
+
+            if rotate:
+                rigu.parentConstraint(parent=None, child=obj, s=[], mo=True, 
+                                    pm=matrix+'.outputMatrix')
+                if objParent:
+                    cmds.parent(obj, objParent)
+
+                if cmds.objectType(obj) == 'joint':
+                    for a in ['X', 'Y', 'Z']:
+                        cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+            else:
+                rigu.parentConstraint(parent=None, child=obj, r=[], s=[], mo=True, 
+                                    pm=matrix+'.outputMatrix')
+                if objParent:
+                    cmds.parent(obj, objParent)
+
+        else:
+            cmds.connectAttr(motPth+'.allCoordinates', obj+'.translate')
+            if rotate:
+                cmds.connectAttr(motPth+'.rotate', obj+'.rotate')
+            if objParent:
+                cmds.parent(obj, objParent)
 
     return pthNodes
 
-def consToCrvNonParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, frontAxis=0, upAxis=2, upObj=None):
+def consToCrvNonParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, frontAxis=0, upAxis=2, upObj=None, offset=False, rotate=False):
     '''
     Constrain items to curve by motionPath nodes.
     Objects do not need to be placed on top of curve.
@@ -184,6 +226,8 @@ def consToCrvNonParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, f
     consTo = ([])  Objects that will be constrained to curve
     crv    = (str) Curve that objects will be constrained to
     upType = (Int) 1=Object, 2=Object Rototation, 3=Vector, 4=Normal
+    rotate = (bol) Constrain rotation
+    offset = (bol) Create offset transform for constrained objects
     '''
 
     # Check crv exists and is a nurbsCurve
@@ -199,12 +243,26 @@ def consToCrvNonParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, f
 
     pthNodes = []
     for obj in consTo:
+        if cmds.listRelatives(obj, p=True):
+            objParent = cmds.listRelatives(obj, p=True)[0]
+            cmds.parent(obj, w=True)
+        else:
+            objParent=None
+            
+        # Try to eliminate joint orientations that affect matrix constraint
+        if cmds.objectType(obj) == 'joint':
+            try:
+                cmds.makeIdentity(obj, apply=True, t=0, r=1, s=0, n=0, pn=1)
+                for a in ['X', 'Y', 'Z']:
+                    if cmds.getAttr(f'{obj}.jointOrient{a}') != 0:
+                        cmds.setAttr(f'{obj}.rotate{a}', cmds.getAttr(f'{obj}.jointOrient{a}'))
+                        cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+            except:
+                pass
+
         motPth = cmds.createNode('motionPath', n=obj+'_motionPath', ss=True)
         uParam = getUParamByLength(obj, crv)
-        print(uParam)
         cmds.connectAttr(crv+'.ws[0]', motPth+'.geometryPath')
-        cmds.connectAttr(motPth+'.allCoordinates', obj+'.translate')
-        cmds.connectAttr(motPth+'.rotate', obj+'.rotate')
         cmds.setAttr(motPth+'.fractionMode', 1)
         cmds.setAttr(motPth+'.uValue', uParam)
 
@@ -221,8 +279,34 @@ def consToCrvNonParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, f
         cmds.setAttr(motPth+'.inverseFront', inverseFront)
         cmds.setAttr(motPth+'.frontAxis', frontAxis)
         cmds.setAttr(motPth+'.upAxis', upAxis)
-
         pthNodes.append(motPth)
+
+        if offset:
+            matrix = cmds.createNode('composeMatrix', n=motPth+'_worldMatrix', ss=True)
+            cmds.connectAttr(motPth+'.allCoordinates', matrix+'.inputTranslate')
+            cmds.connectAttr(motPth+'.rotate', matrix+'.inputRotate')
+
+            if rotate:
+                rigu.parentConstraint(parent=None, child=obj, s=[], mo=True, 
+                                    pm=matrix+'.outputMatrix')
+                if objParent:
+                    cmds.parent(obj, objParent)
+
+                if cmds.objectType(obj) == 'joint':
+                    for a in ['X', 'Y', 'Z']:
+                        cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+            else:
+                rigu.parentConstraint(parent=None, child=obj, r=[], s=[], mo=True, 
+                                    pm=matrix+'.outputMatrix')
+                if objParent:
+                    cmds.parent(obj, objParent)
+
+        else:
+            cmds.connectAttr(motPth+'.allCoordinates', obj+'.translate')
+            if rotate:
+                cmds.connectAttr(motPth+'.rotate', obj+'.rotate')
+            if objParent:
+                cmds.parent(obj, objParent)
 
     return pthNodes
 

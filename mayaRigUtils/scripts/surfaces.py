@@ -1,5 +1,6 @@
 import maya.cmds as cmds
 from . import omUtil as omu
+from . import rigUtils as rigu
 
 
 def nurbsSrfPrep(create=False, srfName=None):
@@ -105,13 +106,14 @@ def crvAlongSrfMulti(srfName, rows, uv='v'):
 
     return rowCrvs
 
-def constToSrfFol(obj, srfName):
+def constToSrfFol(obj, srfName, translate=True, rotate=True, offset=False):
     '''
     Constrains objects to closest point on nurbs surface with follicle.
     Follicle follows point positions, not transforms.
    
     obj = (str) Item to be constrained
     srfName = (str) Surface that item will be constrained to
+    offset = (bol) Create offset transform for constrained objects
     '''
 
     # # #check for normalized u,v values
@@ -143,11 +145,23 @@ def constToSrfFol(obj, srfName):
     cmds.connectAttr(pntOnSrf+'.result.parameterU', follicle+'.parameterU')# connecting U,V param to follicle U,V param
     cmds.connectAttr(pntOnSrf+'.result.parameterV', follicle+'.parameterV')
 
-    cmds.matchTransform(obj, follicleTrans[0])
-    cmds.parent(obj, follicleTrans[0])
+    if translate == True:
+        tra = ['x','y','z']
+    else:
+        tra = []
+    if rotate == True:
+        rot = ['x','y','z']
+    else:
+        rot = []
+
+    if offset:
+        rigu.parentConstraint(follicleTrans[0], child=obj, t=tra, r=rot, mo=True)
+    else:
+        rigu.parentConstraint(follicleTrans[0], child=obj, t=tra, r=rot, mo=False)
+
     cmds.delete(pntOnSrf) # Needs to be deleted
 
-def constToSrfMatrix(obj, srfName, translate=True, rotate=True, xAxis='v'):
+def constToSrfMatrix(obj, srfName, translate=True, rotate=True, offset=False, xAxis='u', return_pos=False):
     '''
     Constrains objects to closest point on nurbs surface with matrix
 
@@ -155,11 +169,16 @@ def constToSrfMatrix(obj, srfName, translate=True, rotate=True, xAxis='v'):
     srfName   = (str) Surface that item will be constrained to
     translate = (bol) Constrain translation
     rotate    = (bol) Constrain rotation
+    offset    = (bol) Create offset transform for constrained objects
     xAxis     = (str) 'u' or 'v' direction of srf to use for joint X vector
+    return_pos = (bol) Return closestPointOnSurface node (otherwise delete pos).
+                       Manually create decomposeMatrix node and connect
+                       'driver obj' worldMatrix through to f'{return_pos}.inPosition'.
+                       This will animate constrained obj along surface. Ref: eyelid joint example
     '''
 
     # #check for normalized u,v values
-    # rangeU = cmds.getAttr(srfName+'.minMaxRangeV')
+    # rangeU = cmds.getAttr(srfName+'.minMaxRangeU')
     # rangeV = cmds.getAttr(srfName+'.minMaxRangeV')
 
     # if rangeU and rangeV != [(0.0, 1.0)]:
@@ -168,19 +187,37 @@ def constToSrfMatrix(obj, srfName, translate=True, rotate=True, xAxis='v'):
     #     if rebuild == True:
     #         srfName = nurbsSrfPrep(srfName=srfName)
 
+
+    if cmds.listRelatives(obj, p=True):
+        objParent = cmds.listRelatives(obj, p=True)[0]
+        cmds.parent(obj, w=True)
+    else:
+        objParent=None
+
+    if rotate:
+        if cmds.objectType(obj) == 'joint':
+            try:
+                cmds.makeIdentity(obj, apply=True, t=0, r=1, s=0, n=0, pn=1)
+                for a in ['X', 'Y', 'Z']:
+                    if cmds.getAttr(f'{obj}.jointOrient{a}') != 0:
+                        cmds.setAttr(f'{obj}.rotate{a}', cmds.getAttr(f'{obj}.jointOrient{a}'))
+                        cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+            except:
+                pass
+
     pntOnSrf = cmds.createNode('closestPointOnSurface', n=obj+'pntOnSrf', ss=True)
     posInf = cmds.createNode('pointOnSurfaceInfo', n=obj+'posInf', ss=True)
     posMatrix = cmds.createNode('fourByFourMatrix', n=obj+'posMat', ss=True)
-    # posMultMat = cmds.createNode('multMatrix', n=obj+'posMult', ss=True)
-    posLocalDecomp = cmds.createNode('decomposeMatrix', n=obj+'posLocDecomp', ss=True)
 
     cmds.connectAttr(srfName+'.worldSpace[0]', pntOnSrf+'.inputSurface')
     cmds.connectAttr(srfName+'.worldSpace[0]', posInf+'.inputSurface')
     cmds.connectAttr(obj+'.translate', pntOnSrf+'.inPosition')
     cmds.connectAttr(pntOnSrf+'.parameterU', posInf+'.parameterU')
     cmds.connectAttr(pntOnSrf+'.parameterV', posInf+'.parameterV')
-    cmds.disconnectAttr(pntOnSrf+'.parameterU', posInf+'.parameterU')
-    cmds.disconnectAttr(pntOnSrf+'.parameterV', posInf+'.parameterV')
+    if not return_pos:
+        cmds.disconnectAttr(pntOnSrf+'.parameterU', posInf+'.parameterU')
+        cmds.disconnectAttr(pntOnSrf+'.parameterV', posInf+'.parameterV')
+    
     # Pull away from the edge of the nurbs surface
     # Cannot limit this attr minValue, maxValue
     if cmds.getAttr(posInf+'.parameterV') == 0:
@@ -220,26 +257,47 @@ def constToSrfMatrix(obj, srfName, translate=True, rotate=True, xAxis='v'):
         cmds.connectAttr(posInf+'.normalizedTangentUY', posMatrix+'.in21')
         cmds.connectAttr(posInf+'.normalizedTangentUZ', posMatrix+'.in22')
 
-
-
     cmds.connectAttr(posInf+'.positionX', posMatrix+'.in30')
     cmds.connectAttr(posInf+'.positionY', posMatrix+'.in31')
     cmds.connectAttr(posInf+'.positionZ', posMatrix+'.in32')
 
-    # cmds.connectAttr(posMatrix+'.output', posMultMat+'.matrixIn[0]')
-    # cmds.connectAttr(obj+'.parentInverseMatrix[0]', posMultMat+'.matrixIn[1]')
-    # cmds.connectAttr(posMultMat+'.matrixSum', posLocalDecomp+'.inputMatrix')
-    # cmds.connectAttr(posLocalDecomp+'.outputTranslate', obj+'.translate')
-    # cmds.connectAttr(posLocalDecomp+'.outputRotate', obj+'.rotate')
-
-    # Trying to skip the posMultMat node in above comment out block
-    cmds.connectAttr(posMatrix+'.output', posLocalDecomp+'.inputMatrix')
     if translate == True:
-        cmds.connectAttr(posLocalDecomp+'.outputTranslate', obj+'.translate')
+        tra = ['x','y','z']
+    else:
+        tra = []
     if rotate == True:
-        cmds.connectAttr(posLocalDecomp+'.outputRotate', obj+'.rotate')
+        rot = ['x','y','z']
+    else:
+        rot = []
 
-    # Connect U, V if they exist
+    if offset:
+        rigu.parentConstraint(parent=None, child=obj, t=tra, r=rot, s=[], 
+                              mo=True, pm=posMatrix+'.output')
+        if objParent:
+            cmds.parent(obj, objParent)
+
+        if cmds.objectType(obj) == 'joint':
+            if rotate:
+                for a in ['X', 'Y', 'Z']:
+                    cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+        if not rotate:
+            try:
+                cmds.makeIdentity(obj, apply=True, t=0, r=1, s=0, n=0, pn=1)
+            except:
+                pass
+    else:
+        rigu.parentConstraint(parent=None, child=obj, t=tra, r=rot, s=[],
+                              mo=False, pm=posMatrix+'.output')
+        if objParent:
+            cmds.parent(obj, objParent)
+
+        if cmds.objectType(obj) == 'joint':
+            if rotate:
+                for a in ['X', 'Y', 'Z']:
+                    cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+
+    
+    # Connect U, V if they exist (locator guides)
     if 'U' in cmds.listAttr(obj):
         if cmds.getAttr(posInf+'.parameterU') > 1.0: # I think I'm getting rounding errors creating values above 1.0
             cmds.setAttr(obj+'.U', 1.0)
@@ -262,6 +320,9 @@ def constToSrfMatrix(obj, srfName, translate=True, rotate=True, xAxis='v'):
             cmds.setAttr(obj+'.V', pos)
         cmds.connectAttr(obj+'.V', posInf+'.parameterV')
 
-    cmds.delete(pntOnSrf)
 
-    return posInf
+    if return_pos:
+        return pntOnSrf, posInf
+    else:
+        cmds.delete(pntOnSrf)
+        return posInf

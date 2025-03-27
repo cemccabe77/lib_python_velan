@@ -341,7 +341,7 @@ def listHierarchy(source, hierList, loop=0, fullPath=False):
                 hierList.append(child)
                 listHierarchy(child, hierList, loop=1)
 
-def parentConstraint(parent, child, t=['x','y','z'], r=['x','y','z'], s=['x','y','z'], mo=True):
+def parentConstraint(parent=None, child=None, t=['x','y','z'], r=['x','y','z'], s=['x','y','z'], mo=True, pm=None):
     '''
     Node based parent constraint.
 
@@ -351,35 +351,73 @@ def parentConstraint(parent, child, t=['x','y','z'], r=['x','y','z'], s=['x','y'
     r      = []    List of axis to constrain to rotate
     s      = []    List of axis to constrain to scale
     mo     = (bol) Maintain offset option
+    pm     = (plug) parent matrix plug (worldMatrix)
     '''
+
+    # Parent can be defined by a parent matrix(pm) plug, instead of a transform
+    if parent == None:
+        if pm == None:
+            raise AttributeError('No parent, or parent matrix (pm) defined')
 
     if type(child) != 'list':
         child = [child]
 
-    for c in child:
-        multMat = cmds.createNode('multMatrix', n=parent+'_multMatrix_rigUParCon', ss=True)
-        decomp  = cmds.createNode('decomposeMatrix', n=parent+'_matrixDecomp_rigUParCon', ss=True)
+    if parent: # parent transform
+        for c in child:
+            multMat = cmds.createNode('multMatrix', n=parent+'_multMatrix_rigUParCon', ss=True)
+            decomp  = cmds.createNode('decomposeMatrix', n=parent+'_matrixDecomp_rigUParCon', ss=True)
 
-        if mo == True:
-            offset = cmds.createNode('multMatrix', n=parent+'_offset', ss=True)
-            cmds.connectAttr(c+'.worldMatrix[0]', offset+'.matrixIn[0]', f=1)
-            cmds.connectAttr(parent+'.worldInverseMatrix[0]', offset+'.matrixIn[1]', f=1)
-            # Offset
-            cmds.setAttr(multMat+'.matrixIn[0]', cmds.getAttr(offset+'.matrixSum'), type='matrix')
-            cmds.connectAttr(parent+'.worldMatrix[0]', multMat+'.matrixIn[1]', f=1)
-            cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[2]', f=1)
-            cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
-            cmds.delete(offset)
-        else:
-            cmds.connectAttr(parent+'.worldMatrix[0]', multMat+'.matrixIn[0]', f=1)
-            cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[1]', f=1)
-            cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+            if mo == True:
+                offset = cmds.createNode('multMatrix', n=parent+'_offset', ss=True)
+                cmds.connectAttr(c+'.worldMatrix[0]', offset+'.matrixIn[0]', f=1)
+                cmds.connectAttr(parent+'.worldInverseMatrix[0]', offset+'.matrixIn[1]', f=1)
+                # Offset
+                cmds.setAttr(multMat+'.matrixIn[0]', cmds.getAttr(offset+'.matrixSum'), type='matrix')
+                cmds.connectAttr(parent+'.worldMatrix[0]', multMat+'.matrixIn[1]', f=1)
+                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[2]', f=1)
+                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+                cmds.delete(offset)
+            else:
+                cmds.connectAttr(parent+'.worldMatrix[0]', multMat+'.matrixIn[0]', f=1)
+                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[1]', f=1)
+                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
 
-        [cmds.connectAttr(decomp+'.outputTranslate'+axis.upper(), c+'.translate'+axis.upper(), f=1) for axis in t if axis]
-        [cmds.connectAttr(decomp+'.outputRotate'+axis.upper(), c+'.rotate'+axis.upper(), f=1) for axis in r if axis]
-        [cmds.connectAttr(decomp+'.outputScale'+axis.upper(), c+'.scale'+axis.upper(), f=1) for axis in s if axis]
+            [cmds.connectAttr(decomp+'.outputTranslate'+axis.upper(), c+'.translate'+axis.upper(), f=1) for axis in t if axis]
+            [cmds.connectAttr(decomp+'.outputRotate'+axis.upper(), c+'.rotate'+axis.upper(), f=1) for axis in r if axis]
+            [cmds.connectAttr(decomp+'.outputScale'+axis.upper(), c+'.scale'+axis.upper(), f=1) for axis in s if axis]
 
-        return decomp
+            return decomp
+
+    elif pm: # parent worldMatrix plug
+        for c in child:
+            multMat = cmds.createNode('multMatrix', n=c+'_multMatrix_pm_rigUParCon', ss=True)
+            decomp  = cmds.createNode('decomposeMatrix', n=c+'_matrixDecomp_pm_rigUParCon', ss=True)
+
+            if mo == True:
+                offset = cmds.createNode('multMatrix', n=c+'_parent_offset', ss=True)
+                cmds.connectAttr(c+'.worldMatrix[0]', offset+'.matrixIn[0]', f=1)
+                
+                # convert pm to worldInverseMatrix
+                inverse = cmds.createNode('inverseMatrix', n='plug_inverseMatrix', ss=True)
+                cmds.connectAttr(pm, inverse+'.inputMatrix')
+                cmds.connectAttr(inverse+'.outputMatrix', offset+'.matrixIn[1]', f=1)
+
+                # Offset
+                cmds.setAttr(multMat+'.matrixIn[0]', cmds.getAttr(offset+'.matrixSum'), type='matrix')
+                cmds.connectAttr(pm, multMat+'.matrixIn[1]', f=1)
+                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[2]', f=1)
+                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+                cmds.delete(offset)
+            else:
+                cmds.connectAttr(pm, multMat+'.matrixIn[0]', f=1)
+                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[1]', f=1)
+                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+
+            [cmds.connectAttr(decomp+'.outputTranslate'+axis.upper(), c+'.translate'+axis.upper(), f=1) for axis in t if axis]
+            [cmds.connectAttr(decomp+'.outputRotate'+axis.upper(), c+'.rotate'+axis.upper(), f=1) for axis in r if axis]
+            [cmds.connectAttr(decomp+'.outputScale'+axis.upper(), c+'.scale'+axis.upper(), f=1) for axis in s if axis]
+
+            return decomp
 
 def delParentConstraint(delObj=None):
     '''

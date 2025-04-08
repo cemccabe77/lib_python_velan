@@ -11,7 +11,7 @@ from lib_python_velan.mayaRigUtils.scripts import surfaces as srf
 import iKfKCurve
 
 a=iKfKCurve.IkFk()
-a.buildGuide('wrist_Lt_01', gdeNum=6)
+a.build_guide('wrist_Lt_01', guide_count=6)
 
 # One or the other
 a.buildIkFkRig()
@@ -20,295 +20,334 @@ a.buildFkRig()
 
 class IkFk(object):
     def __init__(self):
-        # self.crvName  = ''
-        self.gdeCrv = ''
-        self.gdePos = []
-        self.ctlGrp = ''
+        self.guide_curve = ''
+        self.guide_pos = []
+        self.ctl_group = ''
 
     
-    def buildGuide(self, crvName, gdeNum):
-        # self.crvName = crvName
-        guide = self.crvToFkGdes(crvName, gdeNum)
-        self.gdeCrv = guide[0]
-        self.gdePos = self.gdePos+guide[1]
+    def build_guide(self, curve_name, guide_count):
+        '''
+        Creates FK guides along a curve.
+        User can define guide position and rotation
+        before building either FK, or IK/FK chain system
 
+        curve_name  = (str) Name of curve to create guide from
+        guide_count = (int) Number of guides to create on curve
+        '''
 
-    def buildIkFkRig(self, ctlShape='circle', ctlSize=1.5, ctlColor=2, ctlSuffix='', jntSuffix='', margin=1.0):
-        # Create rig from buildGuide() output, or use current selection.
+        # Could be sending a selection as curve_name. Convert selection to short name.
+        if '|' in curve_name:
+            curve_name = curve_name.split('|')[-1]
+
+        # Check for existing guide curve
+        if not self.guide_curve:
+            self.guide_curve = curve_name
+
+        name_split = curve_name.split('_')
+        name = '_'.join(name_split[:3])
+        guide_pos = crv.create_evenly_along_curve(object_type='joint', object_name=name, count=guide_count, 
+                            curve_name=curve_name, chain=1, keep_curve=1, suffix='ctl_guide')
+        
+        # Building as chain, need to orient end joint in ctlPos chain
+        rot = cmds.xform(guide_pos[-2], q=True, ws=True, ro=True)
+        cmds.xform(guide_pos[-1], r=True, ro=rot)
+
+        # Unparent from chain so user can orient guides
+        [cmds.parent(ctl, curve_name) for ctl in guide_pos]
+
+        # Define start of curve with yellow joint color
+        # Make sure guide curve is not hidden (if created from other hidden crv)
+        cmds.setAttr(f'{guide_pos[0]}.overrideEnabled', 1)
+        cmds.setAttr(f'{guide_pos[0]}.overrideColor', 17)
+        cmds.setAttr(f'{curve_name}.v', 1)
+        cmds.select(None)
+
+        self.guide_curve = curve_name
+        self.guide_pos = guide_pos+guide_pos
+
+        return curve_name, guide_pos
+
+    def build_ik_fk_rig(self, ctl_shape='circle', ctl_size=1.5, ctl_color=2, ctl_suffix='', joint_suffix='', margin=1.0):
+        '''
+        Create rig from build_guide() output, or use current selection.
+        '''       
+
         # Check for curve surface guide selection
         if cmds.ls(sl=1):
-            ctlGde = []
+            ctl_guide = []
             # Make sure its curve surface
-            if cmds.objectType(omu.getDagPath(cmds.ls(sl=1)[0], shape=1))=='nurbsCurve':
+            if cmds.objectType(omu.get_dag_path(cmds.ls(sl=1)[0], shape=1))=='nurbsCurve':
                 # Check for children
                 if cmds.listRelatives(cmds.ls(sl=1)[0], c=1, type='transform'):
                     # See if children are guides
                     for i in cmds.listRelatives(cmds.ls(sl=1)[0], c=1, type='transform'):
                         # Add to gdeList
-                        if i.endswith('_ctlGde'):
-                            ctlGde.append(i)
+                        if i.endswith('_ctl_guide'):
+                            ctl_guide.append(i)
 
-                if ctlGde:
-                    ctlGde.sort()
-                    self.gdePos  = ctlGde
-                    self.gdeCrv = cmds.ls(sl=1)[0]
-                    self.iKfKfromGdes(self.gdeCrv, self.gdePos, ctlShape=ctlShape, ctlSize=ctlSize, ctlColor=ctlColor, 
-                                      margin=margin, ctlSuffix=ctlSuffix, jntSuffix=jntSuffix)
+                if ctl_guide:
+                    ctl_guide.sort()
+                    self.guide_pos = ctl_guide
+                    self.guide_curve = cmds.ls(sl=1)[0]
+                    self.guides_to_ik_fk(curve_name=self.guide_curve, guides=self.guide_pos, ctl_shape=ctl_shape, 
+                        ctl_size=ctl_size, ctl_color=ctl_color, margin=margin, ctl_suffix=ctl_suffix, 
+                        joint_suffix=joint_suffix)
         
-        elif self.gdeCrv and self.gdePos:
-            self.iKfKfromGdes(self.gdeCrv, self.gdePos, ctlShape=ctlShape, ctlSize=ctlSize, ctlColor=ctlColor, 
-                              margin=margin, ctlSuffix=ctlSuffix, jntSuffix=jntSuffix)
+        elif self.guide_curve and self.guide_pos:
+            self.guides_to_ik_fk(curve_name=self.guide_curve, guides=self.guide_pos, ctl_shape=ctl_shape, 
+                ctl_size=ctl_size, ctl_color=ctl_color, margin=margin, ctl_suffix=ctl_suffix, 
+                joint_suffix=joint_suffix)
 
         else:
             raise TypeError('No guide curve selected, or no guide curve in scene')
 
-    def buildFkRig(self, ctlShape='circle', ctlSize=1.5, ctlColor=2, ctlSuffix='', jntSuffix='', margin=1.0):
-        # Create rig from buildGuide() output, or use current selection.
+    def build_fk_rig(self, ctl_shape='circle', ctl_size=1.5, ctl_color=2, ctl_suffix='', joint_suffix='', margin=1.0):
+        '''
+        Create rig from build_guide() output, or use current selection.
+        '''        
+
         # Check for curve surface guide selection
         if cmds.ls(sl=1):
-            ctlGde = []
+            ctl_guide = []
             # Make sure its curve surface
-            if cmds.objectType(omu.getDagPath(cmds.ls(sl=1)[0], shape=1))=='nurbsCurve':
+            if cmds.objectType(omu.get_dag_path(cmds.ls(sl=1)[0], shape=1))=='nurbsCurve':
                 # Check for children
                 if cmds.listRelatives(cmds.ls(sl=1)[0], c=1, type='transform'):
                     # See if children are guides
                     for i in cmds.listRelatives(cmds.ls(sl=1)[0], c=1, type='transform'):
                         # Add to gdeList
-                        if i.endswith('_ctlGde'):
-                            ctlGde.append(i)
+                        if i.endswith('_ctl_guide'):
+                            ctl_guide.append(i)
 
-                if ctlGde:
-                    ctlGde.sort()
-                    self.gdePos  = ctlGde
-                    self.gdeCrv = cmds.ls(sl=1)[0]
-                    self.fKfromGdes(self.gdeCrv, self.gdePos, ctlShape=ctlShape, ctlSize=ctlSize, ctlColor=ctlColor, margin=margin,
-                                    ctlSuffix=ctlSuffix, jntSuffix=jntSuffix)
+                if ctl_guide:
+                    ctl_guide.sort()
+                    self.guide_pos = ctl_guide
+                    self.guide_curve = cmds.ls(sl=1)[0]
+                    self.guides_to_fk(self.guide_curve, self.guide_pos, ctl_shape=ctl_shape, ctl_size=ctl_size, ctl_color=ctl_color, margin=margin,
+                                    ctl_suffix=ctl_suffix, joint_suffix=joint_suffix)
 
-        elif self.gdeCrv and self.gdePos:
-            self.fKfromGdes(self.gdeCrv, self.gdePos, ctlShape=ctlShape, ctlSize=ctlSize, ctlColor=ctlColor, margin=margin,
-                            ctlSuffix=ctlSuffix, jntSuffix=jntSuffix)
+        elif self.guide_curve and self.guide_pos:
+            self.guides_to_fk(self.guide_curve, self.guide_pos, ctl_shape=ctl_shape, ctl_size=ctl_size, ctl_color=ctl_color, margin=margin,
+                            ctl_suffix=ctl_suffix, joint_suffix=joint_suffix)
             
         else:
             raise TypeError('No guide curve selected, or no guide curve in scene')
 
     # ------------------------------------------------------------------------------------------
     def snap(self, source, target):
-        """Move one object to another.
+        '''
+        Move one object to another.
+        '''
 
-        Args:
-            source (str): The name of the maya object we want to move.
-            target (str): The name of the maya object we want to move onto.
-        """
         position = cmds.xform(target, worldSpace=True, matrix=True, query=True)
         cmds.xform(source, worldSpace=True, matrix=position)
     
-    def crvToFkGdes(self, crvName, gdeNum):
+    def curve_to_fk_guides(self, curve_name, guide_count):
         '''
         Creates FK guides along a curve.
         User can define guide position and rotation
         before building either FK, or IK/FK chain system
 
-        crvName = (str) Name of curve to create guide from
-        gdeNum  = (int) Number of guides to create on curve
+        curve_name = (str) Name of curve to create guide from
+        guide_count = (int) Number of guides to create on curve
         '''
 
-        # Could be sending a selection as crvName. Convert selection to short name.
-        if '|' in crvName:
-            crvName = crvName.split('|')[-1]
+        # Could be sending a selection as curve_name. Convert selection to short name.
+        if '|' in curve_name:
+            curve_name = curve_name.split('|')[-1]
 
         # Check for existing guide curve
-        if not self.gdeCrv:
-            self.gdeCrv = crvName
-            # # Duplicate curve to remove transforms, and use as guide
-            # newCrv = cmds.duplicate(crvName)
-            # cmds.makeIdentity(newCrv[0], apply=True, t=1, r=1, s=1, n=0, pn=1)
-            # crvNmeNew = cmds.rename(newCrv, crvName+'_gdeCrv')
-            # cmds.delete(crvName)
-        # else:
-        #     crvNmeNew = self.gdeCrv
+        if not self.guide_curve:
+            self.guide_curve = curve_name
 
-
-        nameSplit = crvName.split('_')
-        sysName = '_'.join(nameSplit[:3])
+        name_split = curve_name.split('_')
+        name = '_'.join(name_split[:3])
+        guide_pos = crv.create_evenly_along_curve(object_type='joint', object_name=name, count=guide_count, 
+                            curve_name=curve_name, chain=1, keep_curve=1, suffix='ctl_guide')
         
-        gdePos = crv.createEvenAlongCrv('joint', sysName, gdeNum, crvName, 1, keepCrv=1, suffix='ctlGde')
         # Building as chain, need to orient end joint in ctlPos chain
-        rot = cmds.xform(gdePos[-2], q=True, ws=True, ro=True)
-        cmds.xform(gdePos[-1], r=True, ro=rot)
+        rot = cmds.xform(guide_pos[-2], q=True, ws=True, ro=True)
+        cmds.xform(guide_pos[-1], r=True, ro=rot)
 
         # Unparent from chain so user can orient guides
-        [cmds.parent(ctl, crvName) for ctl in gdePos]
+        [cmds.parent(ctl, curve_name) for ctl in guide_pos]
 
         # Define start of curve with yellow joint color
         # Make sure guide curve is not hidden (if created from other hidden crv)
-        cmds.setAttr(gdePos[0]+'.overrideEnabled', 1)
-        cmds.setAttr(gdePos[0]+'.overrideColor', 17)
-        cmds.setAttr(crvName+'.v', 1)
+        cmds.setAttr(f'{guide_pos[0]}.overrideEnabled', 1)
+        cmds.setAttr(f'{guide_pos[0]}.overrideColor', 17)
+        cmds.setAttr(f'{curve_name}.v', 1)
         cmds.select(None)
 
-        return crvName, gdePos
+        return curve_name, guide_pos
 
-    def iKfKfromGdes(self, crvName, guides, ctlShape='circle', ctlSize=1.5, ctlColor=2, margin=1.0, ctlSuffix='', jntSuffix=''):
+    def guides_to_ik_fk(self, curve_name, guides, ctl_shape='circle', ctl_size=1.5, ctl_color=2, margin=1.0, ctl_suffix='', joint_suffix=''):
         '''
-        Creates IK/FK chain system from curve with FKGuide children.(crvToFkGdes)
+        Creates IK/FK chain system from curve with FKGuide children.(curve_to_fk_guides)
 
-        crvName   = (str) Name of curve that has FK Guides as children
-        ctlShape  = (str) rdCtl shape
-        ctlSize   = (float) General rdCtl sizes
-        ctlSuffix = (str) Suffix for rdCtl controllers
-        jntSuffix = (str) Suffix for rdCtl joints
+        curve_name   = (str) Name of curve that has FK Guides as children
+        ctl_shape  = (str) rdCtl shape
+        ctl_size   = (float) General rdCtl sizes
+        ctl_suffix = (str) Suffix for rdCtl controllers
+        joint_suffix = (str) Suffix for rdCtl joints
         '''
 
-        ctlGrp = crvName+'_ctls'
-        self.ctlGrp = ctlGrp
+        ctl_group = curve_name+'_ctls'
+        self.ctl_group = ctl_group
 
-        if cmds.objExists(ctlGrp):
-            if cmds.listRelatives(ctlGrp, c=True, type='transform'):
-                [cmds.delete(item) for item in cmds.listRelatives(ctlGrp, c=True, type='transform')]
+        if cmds.objExists(ctl_group):
+            if cmds.listRelatives(ctl_group, c=True, type='transform'):
+                [cmds.delete(item) for item in cmds.listRelatives(ctl_group, c=True, type='transform')]
         else:
-            ctlGrp = cmds.createNode('transform', n=ctlGrp, ss=True)
+            ctl_group = cmds.createNode('transform', n=ctl_group, ss=True)
 
-        # guides to ctls
-        fkCtls = self.gdesToRdCtl(guides, ctlShape=ctlShape, ctlSize=ctlSize, ctlColor=ctlColor, 
-                                  ctlSuffix=ctlSuffix, jntSuffix=jntSuffix, margin=margin)
+        # Guides to ctls
+        fk_ctls = self.guides_to_rdctl(guides=guides, ctl_shape=ctl_shape, ctl_size=ctl_size, ctl_color=ctl_color, 
+                                  ctl_suffix=ctl_suffix, joint_suffix=joint_suffix, margin=margin)
 
-        nameSplit = crvName.split('_')
-        sysName = '_'.join(nameSplit[:3])+'_'
+        name_split = curve_name.split('_')
+        name = '_'.join(name_split[:3])+'_'
 
-        if 'gdeCrv' in sysName:
-            sysName = self.gdeCrv.replace('_gdeCrv', '_')
+        if 'gdeCrv' in name:
+            name = self.guide_curve.replace('_gdeCrv', '_')
 
         # Root ctl
-        ctlPar = rdCtl.Control(sysName+'root', match=fkCtls[0].jt, parent=ctlGrp,
-                shape='cube', color='lightYellow', jt=False, size=ctlSize)
+        ctl_parent = rdCtl.Control(f'{name}root', match=fk_ctls[0].jt, parent=ctl_group,
+                shape='cube', color='lightYellow', jt=False, size=ctl_size)
+        
         # IK Chain
-        ikJts = self.fkToIK(sysName, fkCtls)
+        ikJts = self.fk_to_ik(ctl_name=name, fk_ctls=fk_ctls)
+        
         # Orient root grp
-        self.snap(fkCtls[0].topCtl, ctlPar.grp)
+        self.snap(fk_ctls[0].topCtl, ctl_parent.grp)
+        
         # Parent IK jts
-        cmds.parent(ikJts[0], ctlPar.topCtl)
+        cmds.parent(ikJts[0], ctl_parent.topCtl)
+        
         # IK Handle
         ikHdl = cmds.ikHandle(sj=ikJts[0], ee=ikJts[1], p=2)
-        cmds.parent(ikHdl[0], ctlPar.grp)
-        ikCtl = rdCtl.Control(sysName+'ik', match=ikHdl[0], parent=ctlPar.topCtl,
-                shape='diamond', color='lightYellow', jt=False, size=ctlSize*1.5)
+        cmds.parent(ikHdl[0], ctl_parent.grp)
+        ik_ctl = rdCtl.Control(name+'ik', match=ikHdl[0], parent=ctl_parent.topCtl,
+                shape='diamond', color='lightYellow', jt=False, size=ctl_size*1.5)
+        
         # Orient IK Tip Ctl
-        rot = cmds.xform(ctlPar.topCtl, q=True, ws=True, ro=True)
-        cmds.xform(ikCtl.grp, r=True, ro=rot)
-        # Constrain IK Handel to IK Ctl
-        cmds.parent(ikHdl[0], ikCtl.topCtl)
-        cmds.setAttr(ikHdl[0]+'.visibility', 0)
+        rot = cmds.xform(ctl_parent.topCtl, q=True, ws=True, ro=True)
+        cmds.xform(ik_ctl.grp, r=True, ro=rot)
+        
+        # Constrain IK Handle to IK Ctl
+        cmds.parent(ikHdl[0], ik_ctl.topCtl)
+        cmds.setAttr(f'{ikHdl[0]}.visibility', 0)
+        
         # Parent FK Chain to ikJnt
-        cmds.parent(fkCtls[0].grp, ikJts[0])
-        # UNparent ikTip Ctl to ctlPar grp
-        cmds.parent(ikCtl.grp, ctlPar.grp)
-        # Set ctlPar as IK Pole Vector
-        cmds.poleVectorConstraint(ctlPar.topCtl, ikHdl[0])
+        cmds.parent(fk_ctls[0].grp, ikJts[0])
+        
+        # Unparent ikTip Ctl to ctl_parent grp
+        cmds.parent(ik_ctl.grp, ctl_parent.grp)
+        
+        # Set ctl_parent as IK Pole Vector
+        cmds.poleVectorConstraint(ctl_parent.topCtl, ikHdl[0])
+        
         # Constrain IK Tip to look at root
-        cmds.aimConstraint(ctlPar.topCtl, ikCtl.topCtl, weight=1, 
-            upVector=(0, 1, 0), mo=0, worldUpType="vector", aimVector=(-1, 0, 0), worldUpVector=(0, 1, 0))
+        cmds.aimConstraint(ctl_parent.topCtl, ik_ctl.topCtl, weight=1, upVector=(0, 1, 0), mo=0, worldUpType="vector", 
+                            aimVector=(-1, 0, 0), worldUpVector=(0, 1, 0))
         # Hide guide crv
-        cmds.hide(crvName)
-        # cmds.rename(crvName, crvName+'_deleteMe')
+        cmds.hide(curve_name)
         cmds.select(None)
 
-    def fKfromGdes(self, crvName, guides, ctlShape='circle', ctlSize=1.5, ctlColor=2, ctlSuffix='', jntSuffix='', margin=1.0):
+    def guides_to_fk(self, curve_name, guides, ctl_shape='circle', ctl_size=1.5, ctl_color=2, ctl_suffix='', 
+                    joint_suffix='', margin=1.0):
         '''
         Creates FK chain without IK parent, from fkGuides
         
-        crvName  = (str) Name of curve that has FK Guides as children
-        ctlShape = (str) rdCtl shape
-        ctlSize  = (float) General rdCtl sizes    
-
-        Usage:
-        import rigComponents as rigComp
-
-        crvName = 'skirt_Lt_01'
-        rigComp.crvToFkGdes(crvName, 6)
-        rigComp.fKfromGdes(crvName+'_gdeCrv')
+        curve_name  = (str) Name of curve that has FK Guides as children
+        ctl_shape = (str) rdCtl shape
+        ctl_size  = (float) General rdCtl sizes    
         '''
 
-        ctlGrp = crvName+'_ctls'
-        self.ctlGrp = ctlGrp
+        ctl_group = curve_name+'_ctls'
+        self.ctl_group = ctl_group
 
-        if cmds.objExists(ctlGrp):
-            if cmds.listRelatives(ctlGrp, c=True, type='transform'):
-                [cmds.delete(item) for item in cmds.listRelatives(ctlGrp, c=True, type='transform')]
+        if cmds.objExists(ctl_group):
+            if cmds.listRelatives(ctl_group, c=True, type='transform'):
+                [cmds.delete(item) for item in cmds.listRelatives(ctl_group, c=True, type='transform')]
         else:
-            ctlGrp = cmds.createNode('transform', n=ctlGrp, ss=True)
+            ctl_group = cmds.createNode('transform', n=ctl_group, ss=True)
 
-        if cmds.objExists(crvName):
-            if cmds.objectType(omu.getDagPath(crvName, shape=True))!='nurbsCurve':
+        if cmds.objExists(curve_name):
+            if cmds.objectType(omu.get_dag_path(curve_name, shape=True))!='nurbsCurve':
                 raise TypeError('Specified object is not a nurbs Curve')
         else:
             raise NameError('Specifired Curve does not exist in the scene')
 
-        nameSplit = crvName.split('_')
-        sysName   = '_'.join(nameSplit[:3])+'_'
-        parent    = cmds.listRelatives(crvName, p=True)
+        name_split = curve_name.split('_')
+        name   = '_'.join(name_split[:3])+'_'
+        parent    = cmds.listRelatives(curve_name, p=True)
 
-        fkCtls = self.gdesToRdCtl(guides, ctlShape=ctlShape, ctlSize=ctlSize, ctlColor=ctlColor, 
-                                      ctlSuffix=ctlSuffix, jntSuffix=jntSuffix, margin=margin)
-
+        fk_ctls = self.guides_to_rdctl(guides=guides, ctl_shape=ctl_shape, ctl_size=ctl_size, ctl_color=ctl_color, 
+                                      ctl_suffix=ctl_suffix, joint_suffix=joint_suffix, margin=margin)
         # Root ctl
-        ctlPar = rdCtl.Control(sysName+'root', match=fkCtls[0].jt, parent=ctlGrp,
-                shape='cube', color='lightYellow', jt=False, size=ctlSize)
+        ctl_parent = rdCtl.Control(name+'root', match=fk_ctls[0].jt, parent=ctl_group,
+                shape='cube', color='lightYellow', jt=False, size=ctl_size)
 
         # Orient root grp
-        self.snap(fkCtls[0].topCtl, ctlPar.grp)
+        self.snap(fk_ctls[0].topCtl, ctl_parent.grp)
+        
         # Parent FK Chain to ikJnt
-        cmds.parent(fkCtls[0].grp, ctlPar.topCtl)
+        cmds.parent(fk_ctls[0].grp, ctl_parent.topCtl)
+        
         # Parent root to guide parent if exists
         if parent:
-            cmds.parent(ctlPar.grp, parent[0])
+            cmds.parent(ctl_parent.grp, parent[0])
+        
         # Hide guide crv
-        cmds.hide(crvName)
-        # cmds.rename(crvName, crvName+'_deleteMe')
+        cmds.hide(curve_name)
 
-        return ctlPar.topCtl
+        return ctl_parent.topCtl
 
-    def gdesToRdCtl(self, fkGdes, ctlShape='circle', ctlSize=1.5, ctlColor=2, ctlSuffix='', jntSuffix='', margin=1.0):
+    def guides_to_rdctl(self, guides, ctl_shape='circle', ctl_size=1.5, ctl_color=2, ctl_suffix='', joint_suffix='', margin=1.0):
         '''
         Converts FK guides into rdCtl fk chain. Sets side color
         
-        fkGdes   = ([]) list of FK guides
-        ctlShape = (str) rdCtl shape
-        ctlSize  = (float) rdCtl size
+        guides    = ([]) list of FK guides
+        ctl_shape = (str) rdCtl shape
+        ctl_size  = (float) rdCtl size
         '''
 
-        nameSplit = fkGdes[0].split('_')
-        sysName = '_'.join(nameSplit[:3])
+        name_split = guides[0].split('_')
+        name = '_'.join(name_split[:3])
 
-        fkCtls = []
-        fkJts  = []
-        for i, jnt in enumerate(fkGdes):
-            ctlParent = fkCtls[-1].topCtl if fkCtls else None
-            ctl = rdCtl.Control(sysName+'_fk{}'.format(i), match=jnt, parent=ctlParent,
-                    shape=ctlShape, color='lightYellow', jt=True, size=ctlSize, ctlSuffix=ctlSuffix, jntSuffix=jntSuffix)
-            fkCtls.append(ctl)
-            fkJts.append(ctl.jt)
+        fk_ctls = []
+        fk_joints = []
+        for i, joint in enumerate(guides):
+            ctlParent = fk_ctls[-1].topCtl if fk_ctls else None
+            ctl = rdCtl.Control(f'{name}_fk{i}', match=joint, parent=ctlParent,
+                    shape=ctl_shape, color='lightYellow', jt=True, size=ctl_size, ctlSuffix=ctl_suffix, 
+                    jntSuffix=joint_suffix)
+            fk_ctls.append(ctl)
+            fk_joints.append(ctl.jt)
 
-        [rigU.rdCtlSideColor(ctl, ctlColor, margin=margin) for ctl in fkCtls] # Set color based on ws
-        [cmds.setAttr(jnt+'.v', 0) for jnt in fkJts]
+        [rigU.rdctl_side_color(control=ctl, priority=ctl_color, margin=margin) for ctl in fk_ctls] # Set color based on ws
+        [cmds.setAttr(joint+'.v', 0) for joint in fk_joints]
 
         cmds.select(None)
-        return fkCtls
 
-    def fkToIK(self, ctlName, fkCtls):
+        return fk_ctls
+
+    def fk_to_ik(self, ctl_name, fk_ctls):
         '''
         Creates singe chain IK to parent FK chain to
 
-        ctlName = (str) rdCtl prefix
-        fkCtls  = ([])  list of FKCtls to use as start and end of IK chain
-                        Comes from gdesToRdCtl
+        ctl_name = (str) rdCtl prefix
+        fk_ctls  = ([])  list of fk_ctls to use as start and end of IK chain
+                        Comes from guides_to_rdctl
         '''
 
-        jts =[]
-        jts.append(cmds.joint(n=ctlName+'ikRoot', p=cmds.xform(fkCtls[0].jt, q=True, ws=True, t=True)))
-        jts.append(cmds.joint(n=ctlName+'ikTip', p=cmds.xform(fkCtls[-1].jt, q=True, ws=True, t=True)))
+        joints =[]
+        joints.append(cmds.joint(n=f'{ctl_name}ikRoot', p=cmds.xform(fk_ctls[0].jt, q=True, ws=True, t=True)))
+        joints.append(cmds.joint(n=f'{ctl_name}ikTip', p=cmds.xform(fk_ctls[-1].jt, q=True, ws=True, t=True)))
 
-        for jnt in jts:
-            cmds.joint(jnt, edit=True, zso=True, sao='zup', oj='xyz')
-            cmds.setAttr(jnt+'.drawStyle', 2)
+        for joint in joints:
+            cmds.joint(joint, edit=True, zso=True, sao='zup', oj='xyz')
+            cmds.setAttr(joint+'.drawStyle', 2)
 
-        return jts
+        return joints

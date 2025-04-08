@@ -5,156 +5,157 @@ from . import omUtil as omu
 from . import rigUtils as rigu
 
 
-def createEvenAlongCrv(objType, objName, count, crvName, chain=0, jntAxis='xyz', keepCrv=0, suffix='gde', radius=0.3, lra=True):
+def create_evenly_along_curve(object_type, object_name, count, curve_name, chain=0, joint_axis='xyz', keep_curve=0, 
+                                suffix='gde', radius=0.3, lra=True):
     '''
     Evenly space joints along curve (but does not constrain them to curve)
 
-    objType = (str) Type of item to create along curve('joint' or 'locator')
-    objName = (str) Name for created obj's
-    count   = (int) Number of items to create
-    crvName = (str) Name of curve
-    keepCrv = (bol) Delete curve?
-    suffix  = (str) Suffix
-    radius  = (float) If joint, set joint radius
-    lra     = (bol) If joint, turn on local rotation axis display
+    object_type = (str) Type of item to create along curve('joint' or 'locator')
+    object_name = (str) Name for created obj's
+    count       = (int) Number of items to create
+    curve_name  = (str) Name of curve
+    keep_curve  = (bol) Delete curve?
+    suffix      = (str) Suffix
+    radius      = (float) If joint, set joint radius
+    lra         = (bol) If joint, turn on local rotation axis display
 
     '''
-    if cmds.objExists(crvName):
-        if cmds.objectType(omu.getDagPath(crvName, shape=True))!='nurbsCurve':
-            raise TypeError('Curve is not a nurbs curve')
+    if cmds.objExists(curve_name):
+        if cmds.objectType(omu.get_dag_path(curve_name, shape=True))!='nurbsCurve':
+            raise TypeError(f'Curve is not a nurbs curve >> {curve_name}')
     else:
-        raise NameError('Curve does not exist in the scene')
+        raise NameError(f'Curve does not exist in the scene >> {curve_name}')
 
-    # Check for existing guides. Gets highest numbered
-    gdeList = cmds.ls(objName+'*'+suffix)
-    if gdeList:
-        lastNum = gdeList[-1].split('_')[-2]
-        startNum = int(lastNum)+1
+    # Check for existing guides. If found, gets highest numbered
+    guide_list = cmds.ls(f'{object_name}*{suffix}')
+    if guide_list:
+        last_number = guide_list[-1].split('_')[-2]
+        start_number = int(last_number)+1
     else:
-        startNum = 0
+        start_number = 0
 
-    # objName needs to end with '_' so numbering of new obj's is correct
-    if not objName.endswith('_'):
-        objName = objName+'_'
+    '''
+    # Object_name needs to end with '_' so numbering of new obj's is correct
+    if not object_name.endswith('_'):
+        object_name = object_name+'_'
+    '''
 
-    objList = []
-    crvShp = omu.getDagPath(crvName, shape=1)
-
-
-    crvFn = om.MFnNurbsCurve(omu.getDagPath(crvName, shape=0))
+    object_list = []
+    curve_shape = omu.get_dag_path(curve_name, shape=1)
+    curve_fn = om.MFnNurbsCurve(omu.get_dag_path(curve_name, shape=0))
 
     if count == 1:
-        parameter = crvFn.findParamFromLength(crvFn.length() * 0.5)
+        parameter = curve_fn.findParamFromLength(curve_fn.length() * 0.5)
         point = om.MPoint()
-        crvFn.getPointAtParam(parameter, point)
-        if objType == 'joint':
+        curve_fn.getPointAtParam(parameter, point)
+        if object_type == 'joint':
             num = 0
-            jt = cmds.createNode('joint', n=objName+str(num)+'_'+suffix)
+            jt = cmds.createNode('joint', n=f'{object_name}_{str(num)}_{suffix}')
             cmds.xform(jt,t=[point.x,point.y,point.z])
-            objList.append(jt)
-        if objType == 'locator':
+            object_list.append(jt)
+        if object_type == 'locator':
             num = 0
-            item = cmds.spaceLocator(n=objName+str(num)+'_'+suffix)
+            item = cmds.spaceLocator(n=f'{object_name}_{str(num)}_{suffix}')
             cmds.addAttr(item, at='float', k=True, ci=True, sn='U', max=1.0, min=0.0) # Used in strap.strapRigDorito()
             cmds.addAttr(item, at='float', k=True, ci=True, sn='V', max=1.0, min=0.0) # Used in strap.strapRigDorito()
-            itemTra = cmds.listRelatives(item, p=1)
-            cmds.xform(itemTra,t=[point.x,point.y,point.z])
-            objList.append(item[0])
+            tra = cmds.listRelatives(item, p=1)
+            cmds.xform(tra,t=[point.x,point.y,point.z])
+            object_list.append(item[0])
 
     else:
-        if cmds.getAttr(crvShp+'.form') == 2: # Detects if open or closed curve. 2=Periodic
+        if cmds.getAttr(f'{curve_shape}.form') == 2: # Detects if open or closed curve. 2=Periodic
             spacing = 1.0/(count)
         else:
             spacing = 1.0/(count-1)
 
         for i in range(count):
-            parameter = crvFn.findParamFromLength(crvFn.length() * spacing * i)
+            parameter = curve_fn.findParamFromLength(curve_fn.length() * spacing * i)
             point = om.MPoint()
-            crvFn.getPointAtParam(parameter, point)
-            if objType == 'joint':
-                num = startNum+i
-                jt = cmds.createNode('joint', n=objName+str(num)+'_'+suffix)
+            curve_fn.getPointAtParam(parameter, point)
+            if object_type == 'joint':
+                num = start_number+i
+                jt = cmds.createNode('joint', n=f'{object_name}_{str(num)}_{suffix}')
                 cmds.xform(jt,t=[point.x,point.y,point.z])
-                objList.append(jt)
+                object_list.append(jt)
 
                 if chain and i != 0:
-                    cmds.parent(jt, objList[-2])
+                    cmds.parent(jt, object_list[-2])
 
-            if objType == 'locator':
-                num = startNum+i
-                item = cmds.spaceLocator(n=objName+str(num)+'_'+suffix)
+            if object_type == 'locator':
+                num = start_number+i
+                item = cmds.spaceLocator(n=f'{object_name}_{str(num)}_{suffix}')
                 cmds.addAttr(item, at='float', k=True, ci=True, sn='U', max=1.0, min=0.0) # Used in strap.strapRigDorito()
                 cmds.addAttr(item, at='float', k=True, ci=True, sn='V', max=1.0, min=0.0) # Used in strap.strapRigDorito()
-                itemTra = cmds.listRelatives(item, p=1)
-                cmds.xform(itemTra,t=[point.x,point.y,point.z])
-                objList.append(item[0])
+                tra = cmds.listRelatives(item, p=1)
+                cmds.xform(tra,t=[point.x,point.y,point.z])
+                object_list.append(item[0])
 
-    if len(objList)>0 and objType=='joint':
+    if len(object_list)>0 and object_type=='joint':
         # Orient joint
-        for jt in objList:
-            cmds.joint(jt, edit=True, zso=True, sao='yup', oj=jntAxis)
-            cmds.setAttr(jt+'.radius', radius)
+        for jt in object_list:
+            cmds.joint(jt, edit=True, zso=True, sao='yup', oj=joint_axis)
+            cmds.setAttr(f'{jt}.radius', radius)
             if lra == True:
-                cmds.setAttr(jt+'.displayLocalAxis', 1)
+                cmds.setAttr(f'{jt}.displayLocalAxis', 1)
 
-    if not keepCrv:
-        cmds.delete(crvName)
+    if not keep_curve:
+        cmds.delete(curve_name)
 
-    return objList
+    return object_list
 
-def consToCrv(consTo, crvName):
+def constrain_to_curve(constrained, curve_name):
     '''
     Constrain items to curve (position only)
 
-    ConsTo  = (list) Items that will be constrained to curve
-    crvName = (str) Curve to constrain items to
+    constrained = ([])  Items that will be constrained to curve
+    curve_name  = (str) Curve to constrain items to
     '''
-    if type(consTo) != list:
-        consTo = [consTo]
+    if type(constrained) != list:
+        constrained = [constrained]
 
-    pocList = []
-    for i in consTo:
-        pos=cmds.xform(i, q=True, ws=True, t=True)
-        uParam = getUParam(pos, crvName)
-        crvInfNde = cmds.createNode('pointOnCurveInfo', n=crvName+'_pocInf', ss=True)
-        cmds.connectAttr(crvName+'.worldSpace[0]', crvInfNde+'.inputCurve')
-        cmds.setAttr(crvInfNde+'.parameter', uParam)
-        cmds.connectAttr(crvInfNde+'.position', i+'.translate')
-        pocList.append(crvInfNde)
+    point_list = []
+    for obj in constrained:
+        ws_pos = cmds.xform(obj, q=True, ws=True, t=True)
+        uParam = get_u_param(ws_pos, curve_name)
+        curve_info_node = cmds.createNode('pointOnCurveInfo', n=f'{curve_name}_pocInf', ss=True)
+        cmds.connectAttr(f'{curve_name}.worldSpace[0]', f'{curve_info_node}.inputCurve')
+        cmds.setAttr(f'{curve_info_node}.parameter', uParam)
+        cmds.connectAttr(f'{curve_info_node}.position', f'{obj}.translate')
+        point_list.append(curve_info_node)
 
-    return pocList
+    return point_list
 
-def consToCrvParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, frontAxis=0, upAxis=2, upObj=None, offset=False, rotate=False):
+def constrain_to_curve_parametric(constrained, curve_name, up_type=4, inverse_up=0, inverse_front=0, front_axis=0, 
+                        up_axis=2, up_object=None, offset=False, rotate=False):
     '''
     Constrain items to curve by motionPath nodes.
     Objects do not need to be placed on top of curve.
     This function gets closest point on curve to make constraint.
 
-    ConsTo     = ([]) Items that will be constrained to curve
-    crv        = (str) Curve to constrain items to
-    upType     = (Int) 1=Object, 2=Object Rototation, 3=Vector, 4=Normal
-    rotate     = (bol) Constrain rotation
-    offset     = (bol) Create offset transform for constrained objects
+    constrained = ([]) Items that will be constrained to curve
+    curve_name  = (str) Curve to constrain items to
+    up_type     = (Int) 1=Object, 2=Object Rototation, 3=Vector, 4=Normal
+    rotate      = (bol) Constrain rotation
+    offset      = (bol) Create offset matrix for constrained objects
     '''
 
-    # Check crv exists and is a nurbsCurve
-    if cmds.objExists(crv):
-        if cmds.objectType(omu.getDagPath(crv, shape=True)) != 'nurbsCurve':
-            raise TypeError ('Curve object is not a curve')
+    if cmds.objExists(curve_name):
+        if cmds.objectType(omu.get_dag_path(curve_name, shape=True)) != 'nurbsCurve':
+            raise TypeError (f'Curve {curve_name} is not a curve')
     else:
-        raise NameError('Curve object does not exist in scene')
+        raise NameError(f'Curve {curve_name} does not exist in scene')
 
     # # If passing a single obj for constraint
-    if type(consTo) != list:
-        consTo = [consTo]
+    if type(constrained) != list:
+        constrained = [constrained]
 
-    pthNodes = []
-    for obj in consTo:
+    path_nodes = []
+    for obj in constrained:
         if cmds.listRelatives(obj, p=True):
-            objParent = cmds.listRelatives(obj, p=True)[0]
+            object_parent = cmds.listRelatives(obj, p=True)[0]
             cmds.parent(obj, w=True)
         else:
-            objParent=None
+            object_parent=None
             
         # Try to eliminate joint orientations that affect matrix constraint
         if cmds.objectType(obj) == 'joint':
@@ -168,322 +169,300 @@ def consToCrvParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, fron
                 pass
 
         pos=cmds.xform(obj, q=True, ws=True, t=True)
-        uParam = getUParam(pos, crv)
-        motPth = cmds.createNode('motionPath', n=obj+'_motPath', ss=True)
-        cmds.connectAttr(crv+'.worldSpace[0]', motPth+'.geometryPath')
-        cmds.setAttr(motPth+'.uValue', uParam)
+        u_param = get_u_param(pos, curve_name)
+        print('curve u_param', u_param)
+        motion_path = cmds.createNode('motionPath', n=f'{obj}_motPath', ss=True)
+        cmds.connectAttr(f'{curve_name}.worldSpace[0]', f'{motion_path}.geometryPath')
+        cmds.setAttr(f'{motion_path}.uValue', u_param)
 
-        if upType in [1, 2]:
-            cmds.setAttr(motPth+'.worldUpType', upType)
-            if cmds.objExists(upObj):
-                cmds.connectAttr(upObj+'.worldMatrix[0]', motPth+'.worldUpMatrix')
+        if up_type in [1, 2]:
+            cmds.setAttr(f'{motion_path}.worldUpType', up_type)
+            if cmds.objExists(up_object):
+                cmds.connectAttr(f'{up_object}.worldMatrix[0]', f'{motion_path}.worldUpMatrix')
             else:
-                raise ValueError('Object {} does not exist'.format(upObj))
+                raise ValueError(f'Object {up_object} does not exist')
         else:
-            cmds.setAttr(motPth+'.worldUpType', upType)
+            cmds.setAttr(f'{motion_path}.worldUpType', up_type)
 
-        cmds.setAttr(motPth+'.inverseUp', inverseUp)
-        cmds.setAttr(motPth+'.inverseFront', inverseFront)
-        cmds.setAttr(motPth+'.frontAxis', frontAxis)
-        cmds.setAttr(motPth+'.upAxis', upAxis)
-        pthNodes.append(motPth)
+        cmds.setAttr(f'{motion_path}.inverseUp', inverse_up)
+        cmds.setAttr(f'{motion_path}.inverseFront', inverse_front)
+        cmds.setAttr(f'{motion_path}.frontAxis', front_axis)
+        cmds.setAttr(f'{motion_path}.upAxis', up_axis)
+        path_nodes.append(motion_path)
 
         if offset:
-            matrix = cmds.createNode('composeMatrix', n=motPth+'_worldMatrix', ss=True)
-            cmds.connectAttr(motPth+'.allCoordinates', matrix+'.inputTranslate')
-            cmds.connectAttr(motPth+'.rotate', matrix+'.inputRotate')
+            matrix = cmds.createNode('composeMatrix', n=f'{motion_path}_worldMatrix', ss=True)
+            cmds.connectAttr(f'{motion_path}.allCoordinates', f'{matrix}.inputTranslate')
+            cmds.connectAttr(f'{motion_path}.rotate', f'{matrix}.inputRotate')
 
             if rotate:
                 rigu.parentConstraint(parent=None, child=obj, s=[], mo=True, 
-                                    pm=matrix+'.outputMatrix')
-                if objParent:
-                    cmds.parent(obj, objParent)
+                                    pm=f'{matrix}.outputMatrix')
+                if object_parent:
+                    cmds.parent(obj, object_parent)
 
                 if cmds.objectType(obj) == 'joint':
                     for a in ['X', 'Y', 'Z']:
                         cmds.setAttr(f'{obj}.jointOrient{a}', 0)
             else:
                 rigu.parentConstraint(parent=None, child=obj, r=[], s=[], mo=True, 
-                                    pm=matrix+'.outputMatrix')
-                if objParent:
-                    cmds.parent(obj, objParent)
+                                    pm=f'{matrix}.outputMatrix')
+                if object_parent:
+                    cmds.parent(obj, object_parent)
 
         else:
-            cmds.connectAttr(motPth+'.allCoordinates', obj+'.translate')
+            cmds.connectAttr(f'{motion_path}.allCoordinates', f'{obj}.translate')
             if rotate:
-                cmds.connectAttr(motPth+'.rotate', obj+'.rotate')
-            if objParent:
-                cmds.parent(obj, objParent)
+                cmds.connectAttr(f'{motion_path}.rotate', f'{obj}.rotate')
+            if object_parent:
+                cmds.parent(obj, object_parent)
 
-    return pthNodes
+    return path_nodes
 
-def consToCrvNonParametric(consTo, crv, upType=4, inverseUp=0, inverseFront=0, frontAxis=0, upAxis=2, upObj=None, offset=False, rotate=False):
+def constrain_to_curve_nonparametric(constrained, curve_name, up_type=4, inverse_up=0, inverse_front=0, front_axis=0, 
+                            up_axis=2, up_object=None, offset=False, rotate=False):
     '''
     Constrain items to curve by motionPath nodes.
     Objects do not need to be placed on top of curve.
     This function gets closest point on curve to make constraint.
 
-    consTo = ([])  Objects that will be constrained to curve
-    crv    = (str) Curve that objects will be constrained to
-    upType = (Int) 1=Object, 2=Object Rototation, 3=Vector, 4=Normal
-    rotate = (bol) Constrain rotation
-    offset = (bol) Create offset transform for constrained objects
+    constrained = ([])  Objects that will be constrained to curve
+    curve_name  = (str) Curve that objects will be constrained to
+    up_type     = (Int) 1=Object, 2=Object Rototation, 3=Vector, 4=Normal
+    rotate      = (bol) Constrain rotation
+    offset      = (bol) Create offset matrix for constrained objects
     '''
 
-    # Check crv exists and is a nurbsCurve
-    if cmds.objExists(crv):
-        if cmds.objectType(omu.getDagPath(crv, shape=True)) != 'nurbsCurve':
-            raise TypeError ('Curve object is not a curve')
+    if cmds.objExists(curve_name):
+        if cmds.objectType(omu.get_dag_path(curve_name, shape=True)) != 'nurbsCurve':
+            raise TypeError (f'Curve {curve_name} is not a curve')
     else:
-        raise NameError('Curve object does not exist in scene')
+        raise NameError(f'Curve {curve_name} does not exist in scene')
 
     # If passing a single obj for constraint
-    if type(consTo) != list:
-        consTo = [consTo]
+    if type(constrained) != list:
+        constrained = [constrained]
 
-    pthNodes = []
-    for obj in consTo:
+    # Axis dict to allow int or string input arguments
+    # To make compatable with simple_sys and velan libraries
+    axis_dict = {'X': 0, 'Y': 1, 'Z': 2}
+    if isinstance(front_axis, str):
+        front_axis = axis_dict[front_axis]
+    if isinstance(up_axis, str):
+        up_axis = axis_dict[up_axis]
+
+    path_nodes = []
+    for obj in constrained:
         if cmds.listRelatives(obj, p=True):
-            objParent = cmds.listRelatives(obj, p=True)[0]
+            object_parent = cmds.listRelatives(obj, p=True)[0]
             cmds.parent(obj, w=True)
         else:
-            objParent=None
+            object_parent=None
             
         # Try to eliminate joint orientations that affect matrix constraint
         if cmds.objectType(obj) == 'joint':
             try:
                 cmds.makeIdentity(obj, apply=True, t=0, r=1, s=0, n=0, pn=1)
                 for a in ['X', 'Y', 'Z']:
-                    if cmds.getAttr(f'{obj}.jointOrient{a}') != 0:
-                        cmds.setAttr(f'{obj}.rotate{a}', cmds.getAttr(f'{obj}.jointOrient{a}'))
-                        cmds.setAttr(f'{obj}.jointOrient{a}', 0)
+                    if cmds.getAttr(f'{obj}jointOrient{a}') != 0:
+                        cmds.setAttr(f'{obj}rotate{a}', cmds.getAttr(f'{obj}.jointOrient{a}'))
+                        cmds.setAttr(f'{obj}jointOrient{a}', 0)
             except:
                 pass
 
-        motPth = cmds.createNode('motionPath', n=obj+'_motionPath', ss=True)
-        uParam = getUParamByLength(obj, crv)
-        cmds.connectAttr(crv+'.ws[0]', motPth+'.geometryPath')
-        cmds.setAttr(motPth+'.fractionMode', 1)
-        cmds.setAttr(motPth+'.uValue', uParam)
+        motion_path = cmds.createNode('motionPath', n=f'{obj}_motionPath', ss=True)
+        u_param = get_u_parm_by_length(obj, curve_name)
+        print('curve u_param', u_param)
+        cmds.connectAttr(f'{curve_name}.ws[0]', f'{motion_path}.geometryPath')
+        cmds.setAttr(f'{motion_path}.fractionMode', 1)
+        cmds.setAttr(f'{motion_path}.uValue', u_param)
 
-        if upType in [1, 2]:
-            cmds.setAttr(motPth+'.worldUpType', upType)
-            if cmds.objExists(upObj):
-                cmds.connectAttr(upObj+'.worldMatrix[0]', motPth+'.worldUpMatrix')
+        if up_type in [1, 2]:
+            cmds.setAttr(f'{motion_path}.worldUpType', up_type)
+            if cmds.objExists(up_object):
+                cmds.connectAttr(f'{up_object}.worldMatrix[0]', f'{motion_path}.worldUpMatrix')
             else:
-                raise ValueError('Object {} does not exist'.format(upObj))
+                raise ValueError(f'Object {up_object} does not exist')
         else:
-            cmds.setAttr(motPth+'.worldUpType', upType)
+            cmds.setAttr(f'{motion_path}.worldUpType', up_type)
 
-        cmds.setAttr(motPth+'.inverseUp', inverseUp)
-        cmds.setAttr(motPth+'.inverseFront', inverseFront)
-        cmds.setAttr(motPth+'.frontAxis', frontAxis)
-        cmds.setAttr(motPth+'.upAxis', upAxis)
-        pthNodes.append(motPth)
+        cmds.setAttr(f'{motion_path}.inverseUp', inverse_up)
+        cmds.setAttr(f'{motion_path}.inverseFront', inverse_front)
+        cmds.setAttr(f'{motion_path}.frontAxis', front_axis)
+        cmds.setAttr(f'{motion_path}.upAxis', up_axis)
+        path_nodes.append(motion_path)
 
         if offset:
-            matrix = cmds.createNode('composeMatrix', n=motPth+'_worldMatrix', ss=True)
-            cmds.connectAttr(motPth+'.allCoordinates', matrix+'.inputTranslate')
-            cmds.connectAttr(motPth+'.rotate', matrix+'.inputRotate')
+            matrix = cmds.createNode('composeMatrix', n=f'{motion_path}_worldMatrix', ss=True)
+            cmds.connectAttr(f'{motion_path}.allCoordinates', f'{matrix}.inputTranslate')
+            cmds.connectAttr(f'{motion_path}.rotate', f'{matrix}.inputRotate')
 
             if rotate:
-                rigu.parentConstraint(parent=None, child=obj, s=[], mo=True, 
-                                    pm=matrix+'.outputMatrix')
-                if objParent:
-                    cmds.parent(obj, objParent)
+                rigu.parentConstraint(parent=None, child=obj, s=[], mo=True, pm=f'{matrix}.outputMatrix')
+                if object_parent:
+                    cmds.parent(obj, object_parent)
 
                 if cmds.objectType(obj) == 'joint':
                     for a in ['X', 'Y', 'Z']:
                         cmds.setAttr(f'{obj}.jointOrient{a}', 0)
             else:
-                rigu.parentConstraint(parent=None, child=obj, r=[], s=[], mo=True, 
-                                    pm=matrix+'.outputMatrix')
-                if objParent:
-                    cmds.parent(obj, objParent)
+                rigu.parentConstraint(parent=None, child=obj, r=[], s=[], mo=True, pm=f'{matrix}.outputMatrix')
+                if object_parent:
+                    cmds.parent(obj, object_parent)
 
         else:
-            cmds.connectAttr(motPth+'.allCoordinates', obj+'.translate')
+            cmds.connectAttr(f'{motion_path}.allCoordinates', f'{obj}.translate')
             if rotate:
-                cmds.connectAttr(motPth+'.rotate', obj+'.rotate')
-            if objParent:
-                cmds.parent(obj, objParent)
+                cmds.connectAttr(f'{motion_path}.rotate', f'{obj}.rotate')
+            if object_parent:
+                cmds.parent(obj, object_parent)
 
-    return pthNodes
+    return path_nodes
 
-def getUParam(pnt, crv):
+def get_u_param(ws_pos, curve_name):
     '''
-    Get point on curve
-    crv = (str) = Curve name
-    '''
-    point = om.MPoint(*pnt)
+    Get closest point on curve from supplied world space
 
-    curveFn = om.MFnNurbsCurve(omu.getDagPath(crv, shape=0))
+    ws_pos     = [Position] cmds.xform(obj, q=True, ws=True, t=True)
+    curve_name = (str) = Curve name
+    '''
+    
+    point = om.MPoint(*ws_pos)
+    curveFn = om.MFnNurbsCurve(omu.get_dag_path(curve_name, shape=0))
     paramUtill=om.MScriptUtil()
     paramPtr=paramUtill.asDoublePtr()
     isOnCurve = curveFn.isPointOnCurve(point)
+    
     if isOnCurve == True:
         curveFn.getParamAtPoint(point, paramPtr, 0.001, om.MSpace.kObject )
     else:
         point = curveFn.closestPoint(point, paramPtr, 0.001, om.MSpace.kObject)
         curveFn.getParamAtPoint(point, paramPtr, 0.001, om.MSpace.kObject )
+    
     param = paramUtill.getDouble(paramPtr)
 
     return param
 
-def getUParamByLength(obj, crv):
+def get_u_parm_by_length(obj, curve_name):
     '''
-    Gets UParam on crv by getting position on curve, arc 'length' value (Non-Parametric UParam)
+    Gets UParam on curve_name by getting position on curve, arc 'length' value (Non-Parametric UParam)
+    
     obj = (str) Object to retrieve closest point from
-    crv = (str) Curve to query
+    curve_name = (str) Curve to query
     '''
    
     '''
-    # OM (Seems to have difficulty finding closest point and fails, when to close to end of curve)
-    fn = MFnNurbsCurve(MGlobal.getSelectionListByName(crv).getDagPath(0))
-    _, u = fn.closestPoint(MPoint(cmds.xform(obj, q=1, ws=1, t=1)))
-    uParam = fn.findLengthFromParam(u) / fn.length()
+    # OM (Seems to have difficulty finding closest point and fails when to close to end of curve)
+    
+    fn = MFnNurbsCurve(MGlobal.getSelectionListByName(curve_name).get_dag_path(0))_, u = fn.closestPoint(MPoint(cmds.xform(obj, q=1, ws=1, t=1)))
+    u_param = fn.findLengthFromParam(u) / fn.length()
     '''
    
     # By Nodes
-    objPos = cmds.createNode('decomposeMatrix', n='objWorldSpace', ss=True)
-    pocInf = cmds.createNode('nearestPointOnCurve', n='pocInfo', ss=True)
-    arcLen = cmds.createNode('curveInfo', n='arcLen', ss=True)
-    posLen = cmds.createNode('arcLengthDimension', n='posInfo', ss=True)
-    uValue = cmds.createNode('remapValue', n='posUVal', ss=True)
+    object_pos = cmds.createNode('decomposeMatrix', n='objWorldSpace', ss=True)
+    pnt_on_crv_node = cmds.createNode('nearestPointOnCurve', n='pocInfo', ss=True)
+    arc_length_node = cmds.createNode('curveInfo', n='arcLen', ss=True)
+    pos_length_node = cmds.createNode('arcLengthDimension', n='posInfo', ss=True)
+    val_remap_node = cmds.createNode('remapValue', n='posUVal', ss=True)
 
-    cmds.connectAttr(crv+'.ws[0]', pocInf+'.inputCurve')
-    cmds.connectAttr(crv+'.ws[0]', posLen+'.nurbsGeometry')
-    cmds.connectAttr(crv+'.ws[0]', arcLen+'.inputCurve')
-    cmds.connectAttr(obj+'.wm[0]', objPos+'.imat')
-    cmds.connectAttr(objPos+'.outputTranslate', pocInf+'.inPosition')
-    cmds.connectAttr(pocInf+'.parameter', posLen+'.uParamValue')
-    cmds.connectAttr(posLen+'.arcLength', uValue+'.inputValue')
-    cmds.connectAttr(arcLen+'.arcLength', uValue+'.inputMax')
+    cmds.connectAttr(f'{curve_name}.ws[0]', f'{pnt_on_crv_node}.inputCurve')
+    cmds.connectAttr(f'{curve_name}.ws[0]', f'{pos_length_node}.nurbsGeometry')
+    cmds.connectAttr(f'{curve_name}.ws[0]', f'{arc_length_node}.inputCurve')
+    cmds.connectAttr(f'{obj}.wm[0]', f'{object_pos}.imat')
+    cmds.connectAttr(f'{object_pos}.outputTranslate', f'{pnt_on_crv_node}.inPosition')
+    cmds.connectAttr(f'{pnt_on_crv_node}.parameter', f'{pos_length_node}.uParamValue')
+    cmds.connectAttr(f'{pos_length_node}.arcLength', f'{val_remap_node}.inputValue')
+    cmds.connectAttr(f'{arc_length_node}.arcLength', f'{val_remap_node}.inputMax')
 
-    uParam = cmds.getAttr(uValue+'.outValue')
+    u_param = cmds.getAttr(f'{val_remap_node}.outValue')
 
-    cmds.delete(objPos, pocInf, arcLen, uValue)
-    posPar = cmds.listRelatives(posLen, p=True)
-    cmds.delete(posPar)
+    cmds.delete(object_pos, pnt_on_crv_node, arc_length_node, val_remap_node)
+    cmds.delete(cmds.listRelatives(pos_length_node, p=True)) # Result: ['arcLengthDimension1']
    
-    return uParam
+    return u_param
 
-def crvFromJtChain(root, crvName, d=3):
+def curve_from_joint_chain(root, curve_name, degree=3):
     '''
-    root    = (str) Root joint of joint chain
-    d       = (int) Curve Degree
-    crvName = (str) Name of output curve
+    root       = (str) Root joint of joint chain
+    degree     = (int) Curve Degree
+    curve_name = (str) Name of output curve
     '''
-    joints = posFromJtChain(root)
-    newCrv = cmds.curve(d=d, p=joints)
-    cmds.rename(newCrv, crvName)
 
-def posFromJtChain(root):
+    joints = pos_from_joint_chain(root)
+    new_curve = cmds.curve(d=degree, p=joints)
+    cmds.rename(new_curve, curve_name)
+
+def pos_from_joint_chain(root):
     '''
     Gets position of each joint in joint chain.
-    Used in crvFromJtChain to create curve from joint chain.
+    Used in curve_from_joint_chain to create curve from joint chain.
    
     root = (str) Root of joint chain
     '''
-    # raise DeprecationWarning
-    pos = [cmds.xform(root, q=True, t=True, ws=True)]
+
+    position = [cmds.xform(root, q=True, t=True, ws=True)]
     children = cmds.listRelatives(root, c=True) or []
     for child in children:
-        pos.extend(posFromJtChain(child))
-    return pos
+        position.extend(pos_from_joint_chain(child))
+    return position
 
-def queryCVCount(crvName):
+def query_cv_count(curve_name):
     '''
-    Gives the number of CV's
-    number of CVs = degree + spans.
+    Gives the number of cv's
+    Number of cv's = degree + spans.
     '''
-    degs = cmds.getAttr( crvName+'.degree' )
-    spans = cmds.getAttr( crvName+'.spans' )
-    cvs = degs+spans
-    return cvs
 
-def numCVs(crvName):
-    return int(cmds.getAttr (crvName+'.degree'))+ (cmds.getAttr (crvName+'.spans'))
+    degree = cmds.getAttr( f'{curve_name}.degree' )
+    spans = cmds.getAttr( f'{curve_name}.spans' )
+    cv = degree+spans
+    return cv
 
-def updateOrigShapeCrv(source, target):
+def number_of_cv(curve_name):
+    return int(cmds.getAttr (f'{curve_name}.degree')) + (cmds.getAttr (f'{curve_name}.spans'))
+
+def update_shape_crv(source, target):
     '''
     Updates target curve shape with source curve shape.
     '''
-    deleteUnusedShapesCrv()
+
+    delete_unused_shapes_curve()
 
     for obj in [source, target]:
-        if cmds.objectType(omu.getDagPath(obj, shape=1)) != 'nurbsCurve':
-            print(obj, '<'*50)
-            raise TypeError('Object is not of type nurbsSurface')
+        if cmds.objectType(omu.get_dag_path(obj, shape=1)) != 'nurbsCurve':
+            raise TypeError('Object is not of type nurbsSurface >> f{obj}')
 
-    targetShapes = cmds.listRelatives(target, c=1, s=1)
-    if len(targetShapes) > 1:
-        for shape in targetShapes:
+    target_shapes = cmds.listRelatives(target, c=1, s=1)
+    if len(target_shapes) > 1:
+        for shape in target_shapes:
             if 'Orig' in shape:
-                targetShape = shape
+                target_shape = shape
     else:
-        targetShape = targetShapes[0]
+        target_shape = target_shapes[0]
 
-    sourceShape = cmds.listRelatives(source, c=1, s=1)
-    if len(sourceShape) > 1:
-        for shape in sourceShape:
+    source_shapes = cmds.listRelatives(source, c=1, s=1)
+    if len(source_shapes) > 1:
+        for shape in source_shapes:
             if 'Orig' in shape:
-                sourceShape = shape
+                source_shape = shape
     else:
-        sourceShape = sourceShape[0]
+        source_shape = source_shapes[0]
 
-    if targetShape and sourceShape:
-        cmds.connectAttr(sourceShape+'.worldSpace[0]', targetShape+'.create')
+    if target_shape and source_shape:
+        cmds.connectAttr(f'{source_shape}.worldSpace[0]', f'{target_shape}.create')
         cmds.refresh()
-        cmds.disconnectAttr(sourceShape+'.worldSpace[0]', targetShape+'.create')
+        cmds.disconnectAttr(f'{source_shape}.worldSpace[0]', f'{target_shape}.create')
 
-def deleteUnusedShapesCrv():
+def delete_unused_shapes_curve():
     '''
     Removes all unused shape nodes in the scene
     '''
-    allMeshes = cmds.ls(type="mesh") # List all shape nodes
-    deadIntermediates = []
-    for mesh in allMeshes:
-        if cmds.getAttr(mesh+'.io'): #intermediateObject
-            if not cmds.listConnections(mesh):
-                deadIntermediates.append(mesh)
+    all_curves = cmds.ls(type='nurbsCurve')
+    dead_intermediates = []
+    for crv in all_curves:
+        if cmds.getAttr(f'{crv}.io'): #intermediateObject
+            if not cmds.listConnections(crv):
+                dead_intermediates.append(crv)
 
-    if deadIntermediates:
-        for io in deadIntermediates:
+    if dead_intermediates:
+        for io in dead_intermediates:
             cmds.delete(io)
-
-def splitCurves(reduceCrv=0):
-    '''
-    Splits curve shapes into new curves
-    crvName = (sel) current selection
-    '''
-    if cmds.ls(sl=1):
-        crvName = cmds.ls(sl=1)[0]
-        if cmds.objectType(omu.getDagPath(crvName, shape=True)) == 'nurbsCurve':
-            cmds.parent(crvName, w=True)
-
-            shps = []
-            shps = cmds.listRelatives(crvName, type='shape')
-            if shps != []:
-                par = cmds.createNode('transform', n='splitCurves', ss=True)
-                newShp = []
-                for shp in shps[1:]:
-                    tra = cmds.createNode('transform', n=shp+'top', ss=True)
-                    cmds.parent(shp, tra, s=True)
-                    child = cmds.listRelatives(tra, c=True)[0]
-                    cmds.parent(child, par, s=True)
-                    cmds.delete(tra)
-                    newShp.append(child)
-
-                cmds.parent(crvName, par)
-                newShp.append(crvName)
-                cmds.select(None)
-
-            if reduceCrv > 0:
-                [cmds.delete(shp) for shp in newShp[::2]]
-                [newShp.remove(shp) for shp in newShp[::2]]
-
-                if reduceCrv > 1: # reduce again
-                    [cmds.delete(shp) for shp in newShp[::2]]
-        else:
-            raise TypeError('Current selection is not of type "nurbsCurve"')

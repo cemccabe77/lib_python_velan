@@ -1,7 +1,7 @@
 from maya import OpenMaya as om
 
 
-def getDagPath(node, shape):
+def get_dag_path(node, shape):
     '''
     Gets Maya dag path
 
@@ -9,47 +9,23 @@ def getDagPath(node, shape):
     shape = (bol) Return Shape node
     '''
     
-
-
-    '''
-    # Get the MDagPath of the object.
-    sel_list = om.MSelectionList()
-    sel_list.add( node )
-    dag = om.MDagPath()
-    component = om.MObject()
-    sel_list.getDagPath( 0, dag, component )
-
-    # Show that we have the trasnform node.
-    print dag.partialPathName()
-
-    # Extend the MDagPath to the shape node.
-    dag.extendToShapeDirectlyBelow( 0 )
-
-    # Show that we now have the shape node.
-    print dag.partialPathName()
-
-    return dag.partialPathName()
-    '''
-
-
-
     if shape:
         sel = om.MSelectionList()
         sel.add(node)
         d = om.MDagPath()
         sel.getDagPath(0, d)
         d.extendToShapeDirectlyBelow( 0 )
-        print(d.partialPathName())
+        # print(d.partialPathName())
         return d.partialPathName()
     else:
         sel = om.MSelectionList()
         sel.add(node)
         d = om.MDagPath()
         sel.getDagPath(0, d)
-        print(d.partialPathName())
+        # print(d.partialPathName())
         return d
 
-def get_mdagpath_from_object_name( object_name ):
+def get_mdagpath_from_object_name(object_name):
   '''
   Returns the corresponding MDagPath object based on the objectName as a string. 
 
@@ -58,14 +34,13 @@ def get_mdagpath_from_object_name( object_name ):
 
   Returns: 
     MDagPath object
-
   '''
 
-  selList = om.MSelectionList()
-  selList.add( object_name )  
-  dagPath = om.MDagPath()
-  it = om.MItSelectionList( selList )
-  it.getDagPath(dagPath)
+  selection_list = om.MSelectionList()
+  selection_list.add(object_name)  
+  dag_path = om.MDagPath()
+  it = om.MItSelectionList(selection_list)
+  it.getDagPath(dag_path)
   
-  return dagPath
+  return dag_path
 

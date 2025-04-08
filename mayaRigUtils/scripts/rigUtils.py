@@ -7,236 +7,144 @@ from . import curves as crv
 from . import surfaces as srf
 from . import meshes as msh
 from . import skincluster as skn
-from . import shapes as shp
 from lib_python_velan.mayaRigComponents.scripts import rdCtl as rdCtl
 
 
 
-
-######## Utils
-def mirrorCtlShapes(ctl, axis='x', search='L_', replace='R_', doColor=True):
+def rdctl_side_color(control, priority, margin=1.0):
     '''
-    Mirror the given curve (usually a controller) on the specified axis
-    :param str     ctl: object one wants to mirror (can be a list of objs)
-    :param str    axis: axis on which we want to perform the mirror
-    :param str  search: pattern we want to search for
-    :param str replace: pattern we want to replace
-    '''
-
-    curves = ctl if isinstance(ctl, list) else [ctl]
-
-    # filter the input to check whether it's a transform or a shape
-    crv_shapes = []
-    for c in curves:
-        if cmds.nodeType(c) == 'nurbsCurve':
-            crv_shapes.append(c)
-            continue
-        if cmds.nodeType(c) == 'transform' or cmds.nodeType(c) == 'joint':
-            crv_shapes += cmds.listRelatives(c, s=1, ni=1, type='nurbsCurve')
-
-    crv_shapes = list(set(crv_shapes))  # removes duplicates
-
-    for crv_shape in crv_shapes:
-        if not search in crv_shape:
-            LOG.warning('pattern not found in ' + crv_shape + ', skipping...')
-            continue
-
-        crv_transform    = cmds.listRelatives(crv_shape, p=1)[0]
-        mirror_shape     = crv_shape.replace(search, replace, 1)
-        mirror_transform = cmds.listRelatives(mirror_shape, p=1)[0]
-
-        # make sure the shape doesn't have an input connection
-        inConnection = cmds.listConnections(mirror_shape + '.create', s=1, d=0)
-        if inConnection:
-            LOG.warning('Input connection found on {0}.create, skipping tis object'.format(mirror_shape))
-            continue
-
-        # do the mirroring setup
-        mtx = cmds.createNode('fourByFourMatrix', ss=1)
-        attr = filter(None, [x*y for x, y in zip(['.in00', '.in11', '.in22'],
-                                             [axis in x for x in 'xyz'])])[0]
-        cmds.setAttr(mtx + attr, -1)
-
-        # mirror in object space
-        mirror = cmds.createNode('transformGeometry', ss=1, n='mirror')
-        cmds.connectAttr(crv_shape + '.worldSpace', mirror + '.inputGeometry')
-        cmds.connectAttr(mtx + '.output', mirror + '.transform')
-
-        # localize (cancel the input transforms)
-        inv_rot_ctlShape = cmds.createNode('decomposeMatrix', ss=1)
-        cpm = cmds.createNode('composeMatrix', ss=1)
-        localize = cmds.createNode('transformGeometry', ss=1)
-        cmds.connectAttr(crv_transform + '.worldInverseMatrix', inv_rot_ctlShape + '.inputMatrix')
-        cmds.connectAttr(inv_rot_ctlShape + '.outputRotate', cpm + '.inputRotate')
-        cmds.connectAttr(mirror + '.outputGeometry', localize + '.inputGeometry')
-        cmds.connectAttr(cpm + '.outputMatrix', localize + '.transform')
-
-        # reorient like the mirrored transform
-        dcm = cmds.createNode('decomposeMatrix', ss=1)
-        mirror_rot = cmds.createNode('composeMatrix', ss=1)
-        inv_rot = cmds.createNode('inverseMatrix', ss=1)
-        mirror_tg = cmds.createNode('transformGeometry', ss=1)
-
-        cmds.connectAttr(mirror_transform + '.worldInverseMatrix', dcm + '.inputMatrix')
-        cmds.connectAttr(dcm + '.outputRotate', mirror_rot + '.inputRotate')
-        cmds.connectAttr(mirror_rot + '.outputMatrix', inv_rot + '.inputMatrix')
-        cmds.connectAttr(localize + '.outputGeometry', mirror_tg + '.inputGeometry')
-        cmds.connectAttr(inv_rot + '.outputMatrix', mirror_tg + '.transform')
-
-        # connect to the dummy curve
-        cmds.connectAttr(mirror_tg + '.outputGeometry', mirror_shape + '.create')
-        cmds.refresh()
-        cmds.disconnectAttr(mirror_tg + '.outputGeometry', mirror_shape + '.create')
-
-        # do the linewidth
-        cmds.setAttr(mirror_shape + '.lineWidth', cmds.getAttr(crv_shape + '.lineWidth'))
-
-        # and the color if we want to do it
-        if doColor:
-            cmds.setAttr(mirror_shape + '.overrideRGBColors', cmds.getAttr(crv_shape + '.overrideRGBColors'))
-            cmds.setAttr(mirror_shape + '.overrideColor', cmds.getAttr(crv_shape + '.overrideColor'))
-            cmds.setAttr(mirror_shape + '.overrideColorRGB', *cmds.getAttr(crv_shape + '.overrideColorRGB')[0])
-
-        # cleans everything
-        cmds.delete(mirror, inv_rot_ctlShape, cpm, localize, dcm, mirror_rot, inv_rot, mirror_tg)
-        mirror_tg = cmds.createNode('transformGeometry', ss=1)
-
-        cmds.connectAttr(mirror_transform + '.worldInverseMatrix', dcm + '.inputMatrix')
-        cmds.connectAttr(dcm + '.outputRotate', mirror_rot + '.inputRotate')
-        cmds.connectAttr(mirror_rot + '.outputMatrix', inv_rot + '.inputMatrix')
-        cmds.connectAttr(localize + '.outputGeometry', mirror_tg + '.inputGeometry')
-        cmds.connectAttr(inv_rot + '.outputMatrix', mirror_tg + '.transform')
-
-def rdCtlSideColor(ctl, priority, margin=1.0):
-    '''
-    Sets rdCtl color based on world space along X axis
-    ctl      = (instance) Class instance of rdCtl
+    Sets rdCtl color based on world space on X axis
+    control  = (instance) Class instance of rdCtl
     priority = (int or str) int = Primary or Secondary colors / str = color name.
     margin   = Units to define center X width
     '''
+
     if priority in [0,1,2]:
-        # Get ctl world pos to determine color
-        if -margin <= cmds.xform(ctl.topCtl, t=True, q=True, ws=True)[0] <= margin:
-            ctl.color='lightYellow'
-        elif cmds.xform(ctl.topCtl, t=True, q=True, ws=True)[0] < 0:
+        # Get control world pos to determine color
+        if -margin <= cmds.xform(control.topCtl, t=True, q=True, ws=True)[0] <= margin:
+            control.color='lightYellow'
+        elif cmds.xform(control.topCtl, t=True, q=True, ws=True)[0] < 0:
             if priority == 0:
-                ctl.color='red'
+                control.color='red'
             if priority == 1:
-                ctl.color='lightRed'
+                control.color='lightRed'
             if priority == 2:
-                ctl.color='pastelRed'
+                control.color='pastelRed'
 
         else:
             if priority == 0:
-                ctl.color='blue'
+                control.color='blue'
             if priority == 1:
-                ctl.color='lightBlue'
+                control.color='lightBlue'
             if priority == 2:
-                ctl.color='pastelBlue'
+                control.color='pastelBlue'
 
     else:
-        ctl.color = priority
+        control.color = priority
 
-def rdCtlOnVtx(vtxDic={}, orient=0, margin=1.0, duplicate=0, duplicateEnv=1, duplicateType='pp', duplicateName=None):
+def rdctl_on_vtx(vtx_dict={}, orient=0, margin=1.0, duplicate=0, duplicate_skin=1, duplicate_type='pp', 
+                duplicate_name=None):
     '''
     Creates rdCtl's on selected vertex.
 
-    vtxDic    = ({})    vtxDic[headCut_dorito1.vtx[49852], ctlName] = [orient, ctlShape, ctlSize, ctlColor, ctlSuffix, jntSuffix]
+    vtx_dict  = ({})    vtx_dict[headCut_dorito1.vtx[49852], ctlName] = [orient, ctlShape, ctlSize, ctlColor, 
+                        ctlSuffix, jntSuffix]
     orient    = (bol)   Orient ctls to surface
     margin    = (float) World space to color ctls
     duplicate = (bol)   Duplicate surface for dorito setup
-    duplicateEnv   = (bol) Skin duplicate with ctl jnt's
-    duplicateType = (str) pp=pointPosition, bs=blendShape, omim=outMesh_inMesh
-    duplicateName = (str) Name to give the duplicate mesh
+    duplicate_skin   = (bol) Skin duplicate with ctl jnt's
+    duplicate_type = (str) pp=pointPosition, bs=blendShape, omim=outMesh_inMesh
+    duplicate_name = (str) Name to give the duplicate mesh
     '''
 
+    mesh_name = list(vtx_dict)[0][0].split('.')[0] # Gets obj name from vertex
 
-    mshNme = list(vtxDic)[0][0].split('.')[0] # Gets obj name from vertex
-
-    ctls = []
-    jts  = []
-    foll = []
-    for vtx, settings in vtxDic.items():
+    control_list = []
+    joint_list  = []
+    follicle_list = []
+    
+    for vtx, settings in vtx_dict.items():
         pos = cmds.xform(vtx[0], q=1, ws=1, t=1)
         ctl = rdCtl.Control(vtx[1], shape=settings[1], size=settings[2], color='yellow', 
                             ctlSuffix=settings[4], jntSuffix=settings[5], match=None, parent=None, jt=True)
         cmds.xform(ctl.grp, ws=1, t=pos)
-        fol = msh.constToMshFol(ctl.grp, mshNme, orient=settings[0])
+        fol = msh.constrain_to_mesh_follicle(constrained=ctl.grp, mesh_name=mesh_name, orient=settings[0])
 
         if settings[0]: # disconnect or result is double rotation
             cmds.disconnectAttr(fol[1][0]+'.rotate', ctl.grp+'.rotate')
 
-        ctls.append(ctl)
-        jts.append(ctl.jt)
-        foll.append(fol[1])
-        rdCtlSideColor(ctl, priority=settings[3], margin=margin)# Set color based on ws
+        control_list.append(ctl)
+        joint_list.append(ctl.jt)
+        follicle_list.append(fol[1])
+        rdctl_side_color(control=ctl, priority=settings[3], margin=margin)# Set color based on ws
     
-    [cmds.setAttr(jnt+'.visibility', 0) for jnt in jts]
-    [cmds.setAttr(jnt+'.radius', 0.1) for jnt in jts]
+    [cmds.setAttr(f'{jnt}.visibility', 0) for jnt in joint_list]
+    [cmds.setAttr(f'{jnt}.radius', 0.1) for jnt in joint_list]
 
     if duplicate == 1:
-        if duplicateName:
-            dupMsh = cmds.duplicate(mshNme, n=duplicateName)[0]
-            cmds.delete(dupMsh, ch=True)
+        if duplicate_name:
+            duplicate_mesh = cmds.duplicate(mesh_name, n=duplicate_name)[0]
+            cmds.delete(duplicate_mesh, ch=True)
         else:
-            dupMsh = cmds.duplicate(mshNme, n=mshNme+'_dorito')[0]
-            cmds.delete(dupMsh, ch=True)
+            duplicate_mesh = cmds.duplicate(mesh_name, n=f'{mesh_name}_dorito')[0]
+            cmds.delete(duplicate_mesh, ch=True)
 
-        if duplicateEnv == 1:
-            sknCls = cmds.skinCluster([ctl.jt for ctl in ctls], dupMsh, mi=2, bm=0, sm=0, dr=4, wd=0, tsb=1, n=dupMsh+'_doritoSkn')
-            sknJts = skn.getSkinClusterInfluences(sknCls[0])
-            for ctl in ctls:
+        if duplicate_skin == 1:
+            sknCls = cmds.skinCluster([ctl.jt for ctl in control_list], duplicate_mesh, mi=2, bm=0, sm=0, dr=4, 
+                                        wd=0, tsb=1, n=f'{duplicate_mesh}_doritoSkn')
+            sknJts = skn.get_skin_cluster_influences(skin_cluster=sknCls[0])
+            for ctl in control_list:
                  if ctl.jt in sknJts:
-                    jntIdx = skn.getSkinClusterInfluenceIndex(sknCls[0], ctl.jt)
-                    cmds.connectAttr(ctl.grp+'.worldInverseMatrix', sknCls[0]+'.bindPreMatrix[{}]'.format(jntIdx))
+                    jntIdx = skn.get_skin_cluster_influence_index(skin_cluster=sknCls[0], influence=ctl.jt)
+                    cmds.connectAttr(f'{ctl.grp}.worldInverseMatrix', f'{sknCls[0]}.bindPreMatrix[{jntIdx}]')
 
-        if duplicateType == 'pp':
-             matchPointPosition(mshNme, dupMsh)
-        if duplicateType == 'bs':
-            cmds.blendShape(mshNme, dupMsh, n=mshNme+'_rdCtlOnVtx_bs', o='local', w=(0, 1.0))
-        if duplicateType == 'omim':
-            outMeshInMesh(mshNme, dupMsh)
+        if duplicate_type == 'pp':
+             match_point_position(mesh_name, duplicate_mesh)
+        if duplicate_type == 'bs':
+            cmds.blendShape(mesh_name, duplicate_mesh, n=f'{mesh_name}_rdctl_on_vtx_bs', o='local', w=(0, 1.0))
+        if duplicate_type == 'omim':
+            outmesh_inmesh(mesh_name, duplicate_mesh)
 
         
     if duplicate == 1:
-        if duplicateEnv == 1:
-            return ctls, dupMsh, foll, sknCls
+        if duplicate_skin == 1:
+            return control_list, duplicate_mesh, follicle_list, sknCls
         else:
-            return ctls, dupMsh, foll
+            return control_list, duplicate_mesh, follicle_list
     else:
-        return ctls, foll
-    # return ctls
+        return control_list, follicle_list
 
-def jntOnVtx(jntSuffix):
+def joint_on_vtx(joint_suffix):
     if not cmds.ls(sl=True): # Something needs to be selected
         raise TypeError('Make a vertex selection')
     if not cmds.filterExpand(sm=31): # Checks for vertex selection
         raise TypeError('Make a vertex selection')
 
-    vtxLst = cmds.ls(sl=True, flatten=True)
+    vertex_list = cmds.ls(sl=True, flatten=True)
     cmds.select(None)
-    mshNme = vtxLst[0].split('.')[0] # Gets obj name from vertex
+    mesh_name = vertex_list[0].split('.')[0] # Gets obj name from vertex
 
-    traLst = []
-    jntLst = []
-    grpLst = []
-    for vtx in vtxLst:
-        vtxNum = re.sub('[^A-Za-z0-9_]', '', vtx.split('.')[-1])+'_' # returns vtx+number
+    tra_list = []
+    joint_list = []
+    group_list = []
+
+    for vtx in vertex_list:
+        vertex_num = re.sub('[^A-Za-z0-9_]', '', vtx.split('.')[-1])+'_' # returns vtx+number
         pos = cmds.xform(vtx, q=1, ws=1, t=1)
-        jnt = cmds.createNode('joint', n=mshNme+'_'+vtxNum+jntSuffix, ss=True)
-        jntLst.append(jnt)
+        jnt = cmds.createNode('joint', n=f'{mesh_name}_{vertex_num}_{joint_suffix}', ss=True)
+        joint_list.append(jnt)
         cmds.xform(jnt, ws=1, t=pos)
-        fol = msh.constToMshFol(jnt, mshNme, orient=True)
-        traLst.append(fol[1][0])
-        cmds.disconnectAttr(fol[1][0]+'.rotate', jnt+'.rotate') # disconnect or result is double rotation
-        folGrp = cmds.createNode('transform', n=mshNme+'_'+vtxNum+'jntOnMsh', ss=True)
-        grpLst.append(folGrp)
-        cmds.parent(traLst, folGrp)
-        parentConstraint(mshNme, folGrp, mo=True)
+        follicle = msh.constrain_to_mesh_follicle(constrained=jnt, mesh_name=mesh_name, orient=True)
+        tra_list.append(follicle[1][0])
+        cmds.disconnectAttr(follicle[1][0]+'.rotate', jnt+'.rotate') # disconnect or result is double rotation
+        follicle = cmds.createNode('transform', n=f'{mesh_name}_{vertex_num}_jntOnMsh', ss=True)
+        group_list.append(follicle)
+        cmds.parent(tra_list, follicle)
+        parentConstraint(mesh_name, follicle, mo=True)
 
-    return traLst, jntLst, grpLst
+    return tra_list, joint_list, group_list
 
-def rdCtlPreBindMat(dorLst, jntSuffix=None, bfrSuffix=None):
+def rdctl_prebind_matrix(dorito_list, joint_suffix=None, buffer_suffix=None):
     '''
     Recives a list of rdCtls and object with rdJts in skincluster, as last selection.
 
@@ -246,60 +154,59 @@ def rdCtlPreBindMat(dorLst, jntSuffix=None, bfrSuffix=None):
     Looks for joint bfr.
     Connects bfr worldInversMatrix to skincluster preBindMatrix.
 
-    dorLst = [] Selection of joints and obj with skincluster as last selection
+    dorito_list = [] Selection of joints and obj with skincluster as last selection
 
     '''
 
-    sknCls = skn.getSkinClusters(dorLst[-1])
-    if not sknCls:
+    skin_cluster = skn.get_skin_clusters(mesh_name=dorito_list[-1])
+    if not skin_cluster:
         raise AttributeError('Last selected object does not have a skinCluster')
 
-    sknJts = skn.getSkinClusterInfluences(sknCls)
+    skin_joints = skn.get_skin_cluster_influences(skin_cluster=skin_cluster)
 
     # Get all selected joints
-    jntLst = []
-    for item in dorLst:
+    joint_list = []
+    for item in dorito_list:
         if cmds.objectType(item)=='joint':
-            jntLst.append(item)
+            joint_list.append(item)
 
     # Make sure joints are in skincluster
-    for jnt in jntLst:
-        if jnt not in sknJts:
-            jntLst.remove(jnt)
+    for joint in joint_list:
+        if joint not in skin_joints:
+            joint_list.remove(joint)
 
     # Connect pre bind matrix
-    if jntLst != []:
-        if 'mGear' in bfrSuffix:
-            for jnt in jntLst:
-                jntIdx = skn.getSkinClusterInfluenceIndex(sknCls, jnt)
-                jntBfr = cmds.listConnections(jnt+'.inv_wm_conn_'+str(jnt), d=True)[0]
-                if jntBfr:
-                    cmds.connectAttr(jntBfr+'.worldInverseMatrix', sknCls+'.bindPreMatrix[{}]'.format(jntIdx), f=1)
-            print('Done')
+    if joint_list != []:
+        if 'mGear' in buffer_suffix:
+            for joint in joint_list:
+                joint_index = skn.get_skin_cluster_influence_index(skin_cluster=skin_cluster, influence=joint)
+                joint_buffer = cmds.listConnections(f'{joint}.inv_wm_conn_{str(joint)}', d=True)[0]
+                if joint_buffer:
+                    cmds.connectAttr(f'{joint_buffer}.worldInverseMatrix', 
+                        f'{skin_cluster}.bindPreMatrix[{joint_index}]', f=1)
+            print('prebind_matrix connection was made')
 
         else:
-            for jnt in jntLst:
-                jntIdx = skn.getSkinClusterInfluenceIndex(sknCls, jnt)
-                jntBfr = jnt.replace(jntSuffix, bfrSuffix.split(' ')[0]) # Get joint bfr
-                if jntBfr:
-                    cmds.connectAttr(jntBfr+'.worldInverseMatrix', sknCls+'.bindPreMatrix[{}]'.format(jntIdx), f=1)
-            print('Done')
+            for joint in joint_list:
+                joint_index = skn.get_skin_cluster_influence_index(skin_cluster=skin_cluster, influence=joint)
+                joint_buffer = joint.replace(joint_suffix, buffer_suffix.split(' ')[0]) # Get joint bfr
+                if joint_buffer:
+                    cmds.connectAttr(f'{joint_buffer}.worldInverseMatrix', 
+                        f'{skin_cluster}.bindPreMatrix[{joint_index}]', f=1)
+            print('prebind_matrix connection was made')
     else:
         raise IndexError('Selected joints are not part of the skinCluster on last selection')
     
-def lockUnlockSRT2(objs, attrVis, lock, t=['x','y','z'], r=['x','y','z'], s=['x','y','z']):
+def lock_unlock_srt(objs, attrVis, lock, t=['x','y','z'], r=['x','y','z'], s=['x','y','z']):
     '''
     objs    = ([])  List of object names
     attrVis = (bol) Hide from channel box if false
     lock    = (bol) Lock attr
-    s = (bol) Scale
-    r = (bol) Rotate
     t = (bol) Translate
-
-    Example:
-    rigU.LockUnlockSRT(s=1, r=1, t=1, attrVis=1, lock=0, objs=['locator1'])
-
+    r = (bol) Rotate
+    s = (bol) Scale
     '''
+
     if type(objs) != list:
         objs = [objs]
 
@@ -308,38 +215,14 @@ def lockUnlockSRT2(objs, attrVis, lock, t=['x','y','z'], r=['x','y','z'], s=['x'
         [cmds.setAttr(obj+'.r'+axis.lower(), k=attrVis, l=lock) for axis in r]
         [cmds.setAttr(obj+'.s'+axis.lower(), k=attrVis, l=lock) for axis in s]
 
-def lockUnlockSRT(obj, lock, axisLst=[]):
-    [cmds.setAttr(obj+'.'+axis, l=lock) for axis in axisLst]
-    # Sublime Fold #
+def hide_unhide_srt(objs, attrVis, t=['x','y','z'], r=['x','y','z'], s=['x','y','z']):
+    if type(objs) != list:
+        objs = [objs]
 
-def hideUnhideSRT(obj, attrVis, axisLst=[]):
-    [cmds.setAttr(obj+'.'+axis, k=attrVis) for axis in axisLst]
-
-def listHierarchy(source, hierList, loop=0, fullPath=False):
-    '''
-    Recursive function that lists hierarchy
-
-    source   = ('')  Name of top node
-    hierList = ([])  Empty list to populate with hier
-    fullPath = (bol) List full paths
-
-    Usage:
-        hierarchyList = []
-        listHierarchy(source='thigh_l_bind', hierList=hierarchyList)
-    '''
-    if loop==0:
-        hierList.insert(0, source)
-
-    if fullPath == True:
-        if cmds.listRelatives(source, c=True):
-            for child in cmds.listRelatives(source, c=True, pa=True, f=True):
-                hierList.append(child)
-                listHierarchy(child, hierList, loop=1)
-    else:
-        if cmds.listRelatives(source, c=True):
-            for child in cmds.listRelatives(source, c=True):
-                hierList.append(child)
-                listHierarchy(child, hierList, loop=1)
+    for obj in objs:
+        [cmds.setAttr(obj+'.t'+axis.lower(), k=attrVis) for axis in t]
+        [cmds.setAttr(obj+'.r'+axis.lower(), k=attrVis) for axis in r]
+        [cmds.setAttr(obj+'.s'+axis.lower(), k=attrVis) for axis in s]
 
 def parentConstraint(parent=None, child=None, t=['x','y','z'], r=['x','y','z'], s=['x','y','z'], mo=True, pm=None):
     '''
@@ -364,73 +247,76 @@ def parentConstraint(parent=None, child=None, t=['x','y','z'], r=['x','y','z'], 
 
     if parent: # parent transform
         for c in child:
-            multMat = cmds.createNode('multMatrix', n=parent+'_multMatrix_rigUParCon', ss=True)
-            decomp  = cmds.createNode('decomposeMatrix', n=parent+'_matrixDecomp_rigUParCon', ss=True)
+            mult_matrix_node = cmds.createNode('multMatrix', n=f'{parent}_multMatrix_rigUParCon', ss=True)
+            decomp_node  = cmds.createNode('decomposeMatrix', n=f'{parent}_matrixDecomp_rigUParCon', ss=True)
 
             if mo == True:
-                offset = cmds.createNode('multMatrix', n=parent+'_offset', ss=True)
-                cmds.connectAttr(c+'.worldMatrix[0]', offset+'.matrixIn[0]', f=1)
-                cmds.connectAttr(parent+'.worldInverseMatrix[0]', offset+'.matrixIn[1]', f=1)
+                offset = cmds.createNode('multMatrix', n=f'{parent}_offset', ss=True)
+                cmds.connectAttr(f'{c}.worldMatrix[0]', f'{offset}.matrixIn[0]', f=1)
+                cmds.connectAttr(f'{parent}.worldInverseMatrix[0]', f'{offset}.matrixIn[1]', f=1)
                 # Offset
-                cmds.setAttr(multMat+'.matrixIn[0]', cmds.getAttr(offset+'.matrixSum'), type='matrix')
-                cmds.connectAttr(parent+'.worldMatrix[0]', multMat+'.matrixIn[1]', f=1)
-                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[2]', f=1)
-                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+                cmds.setAttr(f'{mult_matrix_node}.matrixIn[0]', cmds.getAttr(f'{offset}.matrixSum'), type='matrix')
+                cmds.connectAttr(f'{parent}.worldMatrix[0]', f'{mult_matrix_node}.matrixIn[1]', f=1)
+                cmds.connectAttr(f'{c}.parentInverseMatrix[0]', f'{mult_matrix_node}.matrixIn[2]', f=1)
+                cmds.connectAttr(f'{mult_matrix_node}.matrixSum', f'{decomp_node}.inputMatrix', f=1)
                 cmds.delete(offset)
             else:
-                cmds.connectAttr(parent+'.worldMatrix[0]', multMat+'.matrixIn[0]', f=1)
-                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[1]', f=1)
-                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+                cmds.connectAttr(f'{parent}.worldMatrix[0]', f'{mult_matrix_node}.matrixIn[0]', f=1)
+                cmds.connectAttr(f'{c}.parentInverseMatrix[0]', f'{mult_matrix_node}.matrixIn[1]', f=1)
+                cmds.connectAttr(f'{mult_matrix_node}.matrixSum', f'{decomp_node}.inputMatrix', f=1)
 
-            [cmds.connectAttr(decomp+'.outputTranslate'+axis.upper(), c+'.translate'+axis.upper(), f=1) for axis in t if axis]
-            [cmds.connectAttr(decomp+'.outputRotate'+axis.upper(), c+'.rotate'+axis.upper(), f=1) for axis in r if axis]
-            [cmds.connectAttr(decomp+'.outputScale'+axis.upper(), c+'.scale'+axis.upper(), f=1) for axis in s if axis]
+            [cmds.connectAttr(f'{decomp_node}.outputTranslate{axis.upper()}', f'{c}.translate{axis.upper()}', f=1) for axis in t if axis]
+            [cmds.connectAttr(f'{decomp_node}.outputRotate{axis.upper()}', f'{c}.rotate{axis.upper()}', f=1) for axis in r if axis]
+            [cmds.connectAttr(f'{decomp_node}.outputScale{axis.upper()}', f'{c}.scale{axis.upper()}', f=1) for axis in s if axis]
 
-            return decomp
+            return decomp_node
 
     elif pm: # parent worldMatrix plug
         for c in child:
-            multMat = cmds.createNode('multMatrix', n=c+'_multMatrix_pm_rigUParCon', ss=True)
-            decomp  = cmds.createNode('decomposeMatrix', n=c+'_matrixDecomp_pm_rigUParCon', ss=True)
+            mult_matrix_node = cmds.createNode('multMatrix', n=f'{c}_multMatrix_pm_rigUParCon', ss=True)
+            decomp_node  = cmds.createNode('decomposeMatrix', n=f'{c}_matrixDecomp_pm_rigUParCon', ss=True)
 
             if mo == True:
-                offset = cmds.createNode('multMatrix', n=c+'_parent_offset', ss=True)
-                cmds.connectAttr(c+'.worldMatrix[0]', offset+'.matrixIn[0]', f=1)
+                offset = cmds.createNode('multMatrix', n=f'{c}_parent_offset', ss=True)
+                cmds.connectAttr(f'{c}.worldMatrix[0]', f'{offset}.matrixIn[0]', f=1)
                 
                 # convert pm to worldInverseMatrix
                 inverse = cmds.createNode('inverseMatrix', n='plug_inverseMatrix', ss=True)
                 cmds.connectAttr(pm, inverse+'.inputMatrix')
-                cmds.connectAttr(inverse+'.outputMatrix', offset+'.matrixIn[1]', f=1)
+                cmds.connectAttr(inverse+'.outputMatrix', f'{offset}.matrixIn[1]', f=1)
 
                 # Offset
-                cmds.setAttr(multMat+'.matrixIn[0]', cmds.getAttr(offset+'.matrixSum'), type='matrix')
-                cmds.connectAttr(pm, multMat+'.matrixIn[1]', f=1)
-                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[2]', f=1)
-                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+                cmds.setAttr(f'{mult_matrix_node}.matrixIn[0]', cmds.getAttr(f'{offset}.matrixSum'), type='matrix')
+                cmds.connectAttr(pm, f'{mult_matrix_node}.matrixIn[1]', f=1)
+                cmds.connectAttr(f'{c}.parentInverseMatrix[0]', f'{mult_matrix_node}.matrixIn[2]', f=1)
+                cmds.connectAttr(f'{mult_matrix_node}.matrixSum', f'{decomp_node}.inputMatrix', f=1)
                 cmds.delete(offset)
             else:
-                cmds.connectAttr(pm, multMat+'.matrixIn[0]', f=1)
-                cmds.connectAttr(c+'.parentInverseMatrix[0]', multMat+'.matrixIn[1]', f=1)
-                cmds.connectAttr(multMat+'.matrixSum', decomp+'.inputMatrix', f=1)
+                cmds.connectAttr(pm, f'{mult_matrix_node}.matrixIn[0]', f=1)
+                cmds.connectAttr(f'{c}.parentInverseMatrix[0]', f'{mult_matrix_node}.matrixIn[1]', f=1)
+                cmds.connectAttr(f'{mult_matrix_node}.matrixSum', f'{decomp_node}.inputMatrix', f=1)
 
-            [cmds.connectAttr(decomp+'.outputTranslate'+axis.upper(), c+'.translate'+axis.upper(), f=1) for axis in t if axis]
-            [cmds.connectAttr(decomp+'.outputRotate'+axis.upper(), c+'.rotate'+axis.upper(), f=1) for axis in r if axis]
-            [cmds.connectAttr(decomp+'.outputScale'+axis.upper(), c+'.scale'+axis.upper(), f=1) for axis in s if axis]
+            [cmds.connectAttr(f'{decomp_node}.outputTranslate{axis.upper()}', f'{c}.translate{axis.upper()}', f=1) for axis in t if axis]
+            [cmds.connectAttr(f'{decomp_node}.outputRotate{axis.upper()}', f'{c}.rotate{axis.upper()}', f=1) for axis in r if axis]
+            [cmds.connectAttr(f'{decomp_node}.outputScale{axis.upper()}', f'{c}.scale{axis.upper()}', f=1) for axis in s if axis]
 
-            return decomp
+            return decomp_node
 
-def delParentConstraint(delObj=None):
+def delete_parentConstraint(constrained=None):
     '''
-    delObj (str) Name of obj to delete constraint from
+    Delete node based parent constraint
+
+    constrained (str) Name of obj to delete constraint from
     '''
+    
     axisLst = ['.tx', '.ty', '.tz', '.rx', '.ry', '.rz', '.sx', '.sy', '.sz']
 
-    if delObj:
+    if constrained:
         nde = None
         for axis in axisLst:
-            if cmds.listConnections(delObj+axis):
-                if '_rigUParCon' in cmds.listConnections(delObj+axis)[0]:
-                    nde = cmds.listConnections(delObj+axis)[0]
+            if cmds.listConnections(constrained+axis):
+                if '_rigUParCon' in cmds.listConnections(constrained+axis)[0]:
+                    nde = cmds.listConnections(constrained+axis)[0]
         if nde != None:
             cmds.delete(nde)
     else:
@@ -443,205 +329,242 @@ def delParentConstraint(delObj=None):
             if nde != None:
                 cmds.delete(nde)
 
-def resetSRT(obj, t=['x','y','z'], r=['x','y','z'], s=['x','y','z']):
-    [cmds.setAttr(obj+'.t'+axis, 0) for axis in t if axis]
-    [cmds.setAttr(obj+'.r'+axis, 0) for axis in r if axis]
-    [cmds.setAttr(obj+'.s'+axis, 1) for axis in s if axis]
+def direct_connect_srt(source, destination, channels=['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz']):
+    [cmds.connectAttr(f'{source}.{axis}', f'{destination}.{axis}', f=1) for axis in channels if axis]
 
-def directConnectSRT(source, dest, channels=['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz']):
-    [cmds.connectAttr(source+'.'+axis, dest+'.'+axis, f=1) for axis in channels if axis]
-
-def outMeshInMesh(source, target):
-    srcShp = omu.getDagPath(source, shape=True)
-    tgtShps = cmds.listRelatives(target, c=True, s=True)
-    orig = None
-    if tgtShps:
-        for s in tgtShps:
-            if 'Orig' in s:
-                orig = s
-        if orig != None:
-            tgtShp = orig
-        else:
-            tgtShp = omu.getDagPath(target, shape=True)
-
-    if srcShp and tgtShp:
-        cmds.connectAttr(srcShp+'.outMesh', tgtShp+'.inMesh', f=True)
-
-def matchPointPosition(driver, driven): # WIP
+def outmesh_inmesh(source, target):
     '''
-    Makes one object match another (translation and deformation), of same type and topology.
-    Target will match Source. Target can be deformed after the fact.
+    Works for polymesh only.
+    Connect source outMesh to target inMesh
+    '''
+
+    source_shape = omu.get_dag_path(source, shape=True)
+    target_shapes = cmds.listRelatives(target, c=True, s=True)
+    orig = None
+    if target_shapes:
+        for shape in target_shapes:
+            if 'Orig' in shape:
+                orig = shape
+        if orig != None:
+            target_shape = orig
+        else:
+            target_shape = omu.get_dag_path(target, shape=True)
+
+    if source_shape and target_shape:
+        cmds.connectAttr(f'{source_shape}.outMesh', f'{target_shape}.inMesh', f=True)
+
+def match_point_position(driver, driven):
+    '''
+    Matches driven to drivers transforms and point position
     '''
     
-    if not cmds.objExists(driver):
-        raise NameError('Source object does not exist in the scene')
-    if not cmds.objExists(driven):
-        raise NameError('Target object does not exist in the scene')
-    if cmds.objectType(omu.getDagPath(driver, shape=1)) != cmds.objectType(omu.getDagPath(driven, shape=1)):
+    if cmds.objectType(omu.get_dag_path(driver, shape=1)) != cmds.objectType(omu.get_dag_path(driven, shape=1)):
         raise TypeError('Source and Target are not of the same type')
 
-    srcShp = omu.getDagPath(driver, shape=True)
-    tgtShp = omu.getDagPath(driven, shape=True)
+    source_shape = omu.get_dag_path(driver, shape=True)
+    target_shape = omu.get_dag_path(driven, shape=True)
 
 
     # Polymesh
-    if cmds.objectType(omu.getDagPath(driver, shape=1)) == 'mesh':
+    if cmds.objectType(omu.get_dag_path(driver, shape=1)) == 'mesh':
         cmds.xform(driven, t=(0,0,0))
-        matchPnt = cmds.createNode('transformGeometry', ss=True)
-        cmds.connectAttr(driver+'.worldMatrix[0]', matchPnt+'.transform')
-        cmds.connectAttr(srcShp+'.outMesh', matchPnt+'.inputGeometry')
+        transform_geo_node = cmds.createNode('transformGeometry', ss=True)
+        cmds.connectAttr(f'{driver}.worldMatrix[0]', f'{transform_geo_node}.transform')
+        cmds.connectAttr(f'{source_shape}.outMesh', f'{transform_geo_node}.inputGeometry')
 
-        if cmds.listConnections(tgtShp+'.inMesh') != None: # We have a deformer
-            ndeTyp = cmds.objectType(cmds.listConnections(tgtShp+'.inMesh'))
-            if ndeTyp == 'skinCluster':
-                nde = cmds.listConnections(tgtShp+'.inMesh')[0]
-                shps = cmds.listRelatives(driven, c=True, s=True)
-                if shps:
+        if cmds.listConnections(f'{target_shape}.inMesh') != None: # We have a deformer
+            node_type = cmds.objectType(cmds.listConnections(f'{target_shape}.inMesh'))
+            if node_type in ['skinCluster', 'blendShape']:
+                shapes = cmds.listRelatives(driven, c=True, s=True)
+                if shapes:
                     orig = None
-                    for s in shps:
-                        if 'Orig' in s:
-                            orig = s
+                    for shape in shapes:
+                        if 'Orig' in shape:
+                            orig = shape
                     if orig:
-                        tgtShp = orig
+                        target_shape = orig
 
-                cmds.connectAttr(matchPnt+'.outputGeometry', tgtShp+'.inMesh', f=1)
-                # cmds.connectAttr(matchPnt+'.outputGeometry', nde+'.input[0].inputGeometry', f=1)
+                cmds.connectAttr(f'{transform_geo_node}.outputGeometry', f'{target_shape}.inMesh', f=1)
             else:
-                raise TypeError('Unknown deformer present on shape node. Update rigU.matchPointPosition with new deformer.')
+                raise TypeError('Unknown deformer present on shape node. Update rigU.match_point_position with new deformer.')
         else:
-            cmds.connectAttr(matchPnt+'.outputGeometry', tgtShp+'.inMesh', f=1)
+            cmds.connectAttr(f'{transform_geo_node}.outputGeometry', f'{target_shape}.inMesh', f=1)
 
 
     # Nurbs Surface
-    if cmds.objectType(omu.getDagPath(driver, shape=1)) == 'nurbsSurface':
+    if cmds.objectType(omu.get_dag_path(driver, shape=1)) == 'nurbsSurface':
         cmds.xform(driven, t=(0,0,0))
-        matchPnt = cmds.createNode('transformGeometry', ss=True)
-        cmds.connectAttr(driver+'.worldMatrix[0]', matchPnt+'.transform')
-        cmds.connectAttr(srcShp+'.worldSpace[0]', matchPnt+'.inputGeometry')
+        transform_geo_node = cmds.createNode('transformGeometry', ss=True)
+        cmds.connectAttr(f'{driver}.worldMatrix[0]', f'{transform_geo_node}.transform')
+        cmds.connectAttr(f'{source_shape}.worldSpace[0]', f'{transform_geo_node}.inputGeometry')
         
-        if cmds.listConnections(tgtShp+'.create') != None: # We have a deformer
-            ndeTyp = cmds.objectType(cmds.listConnections(tgtShp+'.create'))
-            if ndeTyp == 'skinCluster':
-                nde = cmds.listConnections(tgtShp+'.create')[0]
-                shps = cmds.listRelatives(driven, c=True, s=True)
-                if shps:
+        if cmds.listConnections(f'{target_shape}.create') != None: # We have a deformer
+            node_type = cmds.objectType(cmds.listConnections(f'{target_shape}.create'))
+            if node_type in ['skinCluster', 'blendShape']:
+                shapes = cmds.listRelatives(driven, c=True, s=True)
+                if shapes:
                     orig = None
-                    for s in shps:
-                        if 'Orig' in s:
-                            orig = s
+                    for shape in shapes:
+                        if 'Orig' in shape:
+                            orig = shape
                     if orig:
-                        tgtShp = orig
+                        target_shape = orig
 
-                cmds.connectAttr(matchPnt+'.outputGeometry', tgtShp+'.create', f=1)
-                # cmds.connectAttr(matchPnt+'.outputGeometry', nde+'.input[0].inputGeometry', f=1)
+                cmds.connectAttr(f'{transform_geo_node}.outputGeometry', f'{target_shape}.create', f=1)
             else:
-                raise TypeError('Unknown deformer present on shape node. Update rigU.matchPointPosition with new deformer.')
+                raise TypeError('Unknown deformer present on shape node. Update rigU.match_point_position with new deformer.')
         else:
-            cmds.connectAttr(matchPnt+'.outputGeometry', tgtShp+'.create', f=1)
+            cmds.connectAttr(f'{transform_geo_node}.outputGeometry', f'{target_shape}.create', f=1)
 
 
     # Nurbs Curve
-    if cmds.objectType(omu.getDagPath(driver, shape=1)) == 'nurbsCurve':
+    if cmds.objectType(omu.get_dag_path(driver, shape=1)) == 'nurbsCurve':
         cmds.xform(driven, t=(0,0,0))
-        matchPnt = cmds.createNode('transformGeometry', ss=True)
-        cmds.connectAttr(driver+'.worldMatrix[0]', matchPnt+'.transform')
-        cmds.connectAttr(srcShp+'.worldSpace[0]', matchPnt+'.inputGeometry')
+        transform_geo_node = cmds.createNode('transformGeometry', ss=True)
+        cmds.connectAttr(f'{driver}.worldMatrix[0]', f'{transform_geo_node}.transform')
+        cmds.connectAttr(f'{source_shape}.worldSpace[0]', f'{transform_geo_node}.inputGeometry')
 
-        if cmds.listConnections(tgtShp+'.create') != None: # We have a deformer
-            ndeTyp = cmds.objectType(cmds.listConnections(tgtShp+'.create'))
-            if ndeTyp == 'skinCluster':
-                nde = cmds.listConnections(tgtShp+'.create')[0]
-                shps = cmds.listRelatives(driven, c=True, s=True)
-                if shps:
+        if cmds.listConnections(f'{target_shape}.create') != None: # We have a deformer
+            node_type = cmds.objectType(cmds.listConnections(target_shape+'.create'))
+            if node_type in ['skinCluster', 'blendShape']:
+                shapes = cmds.listRelatives(driven, c=True, s=True)
+                if shapes:
                     orig = None
-                    for s in shps:
-                        if 'Orig' in s:
-                            orig = s
+                    for shape in shapes:
+                        if 'Orig' in shape:
+                            orig = shape
                     if orig:
-                        tgtShp = orig
+                        target_shape = orig
 
-                cmds.connectAttr(matchPnt+'.outputGeometry', tgtShp+'.create', f=1)
-                # cmds.connectAttr(matchPnt+'.outputGeometry', nde+'.input[0].inputGeometry', f=1)
+                cmds.connectAttr(f'{transform_geo_node}.outputGeometry', f'{target_shape}.create', f=1)
             else:
-                raise TypeError('Unknown deformer present on shape node. Update rigU.matchPointPosition with new deformer.')
+                raise TypeError('Unknown deformer present on shape node. Update rigU.match_point_position with new deformer.')
         else:
-            cmds.connectAttr(matchPnt+'.outputGeometry', tgtShp+'.create', f=1)
-
-def constrainLocatorToNrb():
-    '''
-    Used for FX locators in the rig. Need to constrain the locators to the rig.
-    Easy to create a nurbs surface, and transfer weights to the surface.
-    Makes is easy to rebuild if necessary.
-    '''
-    for i in cmds.ls(sl=1):
-        shape = i+'Shape'
-        pos = [cmds.getAttr(shape+'.localPositionX'), cmds.getAttr(shape+'.localPositionY'), cmds.getAttr(shape+'.localPositionZ')]
-        loc = cmds.spaceLocator(n=i+'_loc', p=(0,0,0))[0]
-        surf = cmds.nurbsPlane(ch=1, d=3, v=1, p=pos, u=1, w=0.1, ax=(0, 1, 0), lr=1, n=i+'_drv')[0]
-        cmds.xform(loc, t=pos)
-        srf.constToSrfMatrix(loc, surf)
-        cmds.parent(loc, surf)
-        parentConstraint(loc, i, mo=True)
+            cmds.connectAttr(f'{transform_geo_node}.outputGeometry', f'{target_shape}.create', f=1)
 
 ######## Strap rigs
-def ikSplineOnCrv(crvName, ikNum, suffix='jntSuffix'):
-    # IK chain with last joint hack fix
-    ikJts = crv.createEvenAlongCrv('joint', crvName.replace('_srfCrv', ''), ikNum, crvName, chain=1, keepCrv=1, suffix='spljnt')
-    last = cmds.duplicate(ikJts[-1], n=crvName.replace('_srfCrv', '')+'_{}_twistHelperHack'.format(len(ikJts)))[0]
-    cmds.parent(last, ikJts[-1], r=0)
-    cmds.joint(ikJts[-1], zso=1, ch=1, e=1, oj='xyz', sao='yup')
-    # One more joint to orient the 'last' joint hack fix
-    lastOri = cmds.duplicate(last, n='lastOrient')
-    cmds.parent(lastOri, last)
-    cmds.joint(last, zso=1, ch=1, e=1, oj='xyz', sao='yup')
-    cmds.delete(lastOri)
-    cmds.setAttr(last+'.tx', cmds.getAttr(ikJts[-1]+'.tx')/4)
-    ikJts.append(last)
-
-    ikHdl   = cmds.ikHandle(solver='ikSplineSolver', startJoint=ikJts[0], endEffector=last, 
-            rootTwistMode=0, n=crvName.replace('_srfCrv', '')+'_ikSpline', createCurve=0, curve=crvName, simplifyCurve=False, 
-            rootOnCurve=True, parentCurve=False)
-
-    return ikJts, ikHdl
-
-def ikSplineCrvStretch(sysName, motPthNdes, jts, paramJts, ctlAttr):
+def ik_spline_on_curve(curve_name, count, suffix='jntSuffix'):
     '''
-    Uses joints, that are constrained to a curve by consToCrvParametric(),
+    curve_name = (str)
+    count  = (int) Number of joints to build ik_spline
+    suffix = (str)
+    '''
+
+    # IK chain with last joint hack fix
+    ik_joint_list = crv.create_evenly_along_curve(object_type='joint', object_name=curve_name.replace('_srfCrv', ''), 
+                    count=count, curve_name=curve_name, chain=1, keep_curve=1, suffix='splinejnt')
+    last_ik_joint = cmds.duplicate(ik_joint_list[-1], 
+                    n=curve_name.replace('_srfCrv', '')+'_{}_twistHelperHack'.format(len(ik_joint_list)))[0]
+    cmds.parent(last_ik_joint, ik_joint_list[-1], r=0)
+    cmds.joint(ik_joint_list[-1], zso=1, ch=1, e=1, oj='xyz', sao='yup')
+    
+    # One more joint to orient the 'last' joint hack fix
+    last_ik_joint_orient = cmds.duplicate(last_ik_joint, n='lastOrient')
+    cmds.parent(last_ik_joint_orient, last_ik_joint)
+    cmds.joint(last_ik_joint, zso=1, ch=1, e=1, oj='xyz', sao='yup')
+    cmds.delete(last_ik_joint_orient)
+    cmds.setAttr(f'{last_ik_joint}.tx', cmds.getAttr(f'{ik_joint_list[-1]}.tx')/4)
+    ik_joint_list.append(last_ik_joint)
+
+    ikHdl = cmds.ikHandle(solver='ikSplineSolver', startJoint=ik_joint_list[0], endEffector=last_ik_joint, 
+            rootTwistMode=0, n=curve_name.replace('_srfCrv', '')+'_ikSpline', createCurve=0, curve=curve_name, 
+            simplifyCurve=False, rootOnCurve=True, parentCurve=False)
+
+    return ik_joint_list, ikHdl
+
+def ik_spline_curve_stretch(name, motion_nodes, spline_joints, attr_object):
+    '''
+    Uses joints, that are constrained to a curve by constrain_to_curve_parametric(),
     to drive position along curve for spline joints. Giving anim the option
     to turn off Maintain Length for the ik spline.
-    Currently used in ikSplineOnSrf()        
 
-    sysName    = (str) System name to give new nodes created herein
-    motPthNdes = ([])  List of param joint mp nodes from createEvenAlongCrv()
-    jts        = ([])  List of spline joints from ikSplineOnCrv()
-    paramJts   = ([])  List of param joints from createEvenAlongCrv()
-    ctlAttr    = ([])  Rig root ctl that will receive the Maintain Length attr
+    name          = (str) Name to give new nodes created herein
+    motion_nodes  = ([])  List of param joint motionPath nodes from create_evenly_along_curve()
+    spline_joints = ([])  List of spline joints from ik_spline_on_curve()
+    attr_object  = ([])  object that will receive the 'Maintain Length' attribute
     '''
 
-    if not cmds.objExists(ctlAttr):
-        raise NameError('ctlAttr obj does not exist in the scene')
+    if not cmds.objExists(attr_object):
+        raise NameError('attr_object obj does not exist in the scene')
     else:
-        cmds.addAttr(ctlAttr, at='bool', k=True, ci=True, sn='MaintainLength', dv=1)
+        cmds.addAttr(attr_object, at='bool', k=True, ci=True, sn='MaintainLength', dv=1)
 
-    for i, nde in enumerate(motPthNdes[:-1]):
-        distBet = cmds.createNode('distanceBetween', n=sysName+'_ikDistBet_'+str(i), ss=True)
-        distZero = cmds.createNode('floatMath', n=sysName+'_ikDistZero_'+str(i), ss=True)
-        distDiff = cmds.createNode('floatMath', n=sysName+'_ikDistDiff_'+str(i), ss=True)
-        rigScale = cmds.createNode('floatMath', n=sysName+'_rigScale'+str(i), ss=True)
-        cmds.connectAttr(motPthNdes[i]+'.allCoordinates', distBet+'.point1')
-        cmds.connectAttr(motPthNdes[i+1]+'.allCoordinates', distBet+'.point2')
-        cmds.setAttr(rigScale+'.operation', 3) # Divide
-        cmds.setAttr(distZero+'.operation', 1) # Subtract
-        cmds.setAttr(distDiff+'.operation', 1) # Subtract
-        cmds.setAttr(distZero+'.floatA', cmds.getAttr(distBet+'.distance'))
-        cmds.connectAttr(distBet+'.distance', rigScale+'.floatA')
-        cmds.connectAttr(rigScale+'.outFloat', distZero+'.floatB')
-        cmds.setAttr(distDiff+'.floatA', cmds.getAttr(distBet+'.distance'))
-        cmds.connectAttr(distZero+'.outFloat', distDiff+'.floatB')
+    for i, nde in enumerate(motion_nodes[:-1]):
+        distBet = cmds.createNode('distanceBetween', n=f'{name}_ikDistBet_'+str(i), ss=True)
+        distZero = cmds.createNode('floatMath', n=f'{name}_ikDistZero_'+str(i), ss=True)
+        distDiff = cmds.createNode('floatMath', n=f'{name}_ikDistDiff_'+str(i), ss=True)
+        rigScale = cmds.createNode('floatMath', n=f'{name}_rigScale'+str(i), ss=True)
+        cmds.connectAttr(f'{motion_nodes[i]}.allCoordinates', f'{distBet}.point1')
+        cmds.connectAttr(f'{motion_nodes[i+1]}.allCoordinates', f'{distBet}.point2')
+        cmds.setAttr(f'{rigScale}.operation', 3) # divide
+        cmds.setAttr(f'{distZero}.operation', 1) # subtract
+        cmds.setAttr(f'{distDiff}.operation', 1) # subtract
+        cmds.setAttr(f'{distZero}.floatA', cmds.getAttr(f'{distBet}.distance'))
+        cmds.connectAttr(f'{distBet}.distance', f'{rigScale}.floatA')
+        cmds.connectAttr(f'{rigScale}.outFloat', f'{distZero}.floatB')
+        cmds.setAttr(f'{distDiff}.floatA', cmds.getAttr(f'{distBet}.distance'))
+        cmds.connectAttr(f'{distZero}.outFloat', f'{distDiff}.floatB')
         # Maintain length tx
-        lengthCond = cmds.createNode('condition', n=sysName+'_lengthCond_'+str(i), ss=True)
-        cmds.connectAttr(ctlAttr+'.MaintainLength', lengthCond+'.firstTerm')
-        cmds.setAttr(lengthCond+'.secondTerm', 1)
-        cmds.connectAttr(distDiff+'.outFloat', lengthCond+'.colorIfFalseR')
-        cmds.setAttr(lengthCond+'.colorIfTrueR', cmds.getAttr(distBet+'.distance'))
-        cmds.connectAttr(lengthCond+'.outColorR', jts[i+1]+'.translateX')
+        lengthCond = cmds.createNode('condition', n=f'{name}_lengthCond_'+str(i), ss=True)
+        cmds.connectAttr(f'{attr_object}.MaintainLength', f'{lengthCond}.firstTerm')
+        cmds.setAttr(f'{lengthCond}.secondTerm', 1)
+        cmds.connectAttr(f'{distDiff}.outFloat', f'{lengthCond}.colorIfFalseR')
+        cmds.setAttr(f'{lengthCond}.colorIfTrueR', cmds.getAttr(f'{distBet}.distance'))
+        cmds.connectAttr(f'{lengthCond}.outColorR', f'{spline_joints[i+1]}.translateX')
+
+def single_control(global_variables, name, ctl_joint):
+    '''
+    Creates a single rdCtl
+
+    global_variables = ([ ]) List of rdCtl settings (margin, ctlSize, ctlShape, ctlColor, ctlSuffix, jntSuffix)
+    name       = (str) Name to give rdCtl
+    ctl_joint  = (bol) Create a joint 
+    '''
+
+    ctl_root = cmds.spaceLocator(name=name+'_ctlRef')[0]
+    cmds.setAttr(ctl_root+'.overrideEnabled', 1)
+    cmds.setAttr(ctl_root+'.overrideDisplayType', 2) # Reference
+    loc_shape = omu.get_dag_path(ctl_root, shape=True)
+    for axis in ['X', 'Y', 'Z']:
+        cmds.setAttr(loc_shape+'.localScale'+axis, 0)
+
+    ctl = rdCtl.Control(name, shape=global_variables[2], color=global_variables[3], size=global_variables[1], jt=ctl_joint, jntSuffix=global_variables[5], ctlSuffix=global_variables[4])
+    rdctl_side_color(control=ctl, priority=global_variables[3], margin=global_variables[0])
+    cmds.parent(ctl.grp, ctl_root)
+    if ctl_joint == True:
+        cmds.setAttr(str(ctl.jt)+'.v', 0)
+    cmds.addAttr(ctl.topCtl, ci=True, at='bool', sn='rdCtl', min=0, max=1, dv=1)
+    cmds.setAttr(ctl.topCtl+'.rdCtl', l=True)
+    cmds.select(None)
+
+    return ctl
+
+def single_patch(global_variables, name, ctl_joint):
+    '''
+    Creates a single rdCtl constrained to a nurbs patch
+
+    global_variables = ([ ]) List of rdCtl settings (margin, ctlSize, ctlShape, ctlColor, ctlSuffix, jntSuffix)
+    name       = (str) Name to give rdCtl
+    ctl_joint  = (bol) Create a joint 
+    '''
+
+    temp_surface  = cmds.nurbsPlane(ch=1, d=2, v=1, p=(0, 0, 0), u=1, w=1, ax=(0, 1, 0), lr=1.0)
+    build_surface = cmds.rename(temp_surface[0], name) # Using rename to also rename shape node
+
+    ctl_root = cmds.spaceLocator(name=name+'_ctlRef')[0]
+    cmds.setAttr(f'{ctl_root}.overrideEnabled', 1)
+    cmds.setAttr(f'{ctl_root}.overrideDisplayType', 2) # Reference
+    loc_shape = omu.get_dag_path(ctl_root, shape=True)
+    for axis in ['X', 'Y', 'Z']:
+        cmds.setAttr(loc_shape+'.localScale'+axis, 0)
+
+    ctl = rdCtl.Control(name, shape=global_variables[2], color=global_variables[3], size=global_variables[1], jt=ctl_joint, 
+                        jntSuffix=global_variables[5], ctlSuffix=global_variables[4])
+
+    rdctl_side_color(control=ctl, priority=global_variables[3], margin=global_variables[0])
+    cmds.parent(ctl.grp, ctl_root)
+    srf.constrain_to_surface_matrix(ctl_root, build_surface)
+    cmds.setAttr(ctl.jt+'.v', 0)
+    cmds.addAttr(ctl.topCtl, ci=True, at='bool', sn='rdCtl', min=0, max=1, dv=1)
+    cmds.setAttr(ctl.topCtl+'.rdCtl', l=True)
+    cmds.select(None)
